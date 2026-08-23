@@ -669,12 +669,22 @@ $('#recordUploadBtn').addEventListener('click', async () => {
       </table></div>
       ${errs.length > 100 ? `<div class="muted mb" style="font-size:12px">+ ${faNum(errs.length - 100)} خطای دیگر — فهرست کامل در فایل گزارش است</div>` : ''}` : ''}
       <div class="flex">
-        <button class="btn ghost sm" id="dlReportBtn">⬇ دانلود گزارش کامل این فایل (اکسل)</button>
+        <select class="input" id="dailyReportFilter" style="padding:6px 10px;font-size:12.5px;width:auto">
+          <option value="all">همه موارد</option>
+          <option value="ok">فقط ثبت‌شده‌ها ✅</option>
+          <option value="dup">فقط تکراری‌ها 🔁</option>
+          <option value="nf">فقط ناموجودها ❌</option>
+          <option value="no_manager">فقط بدون مدیر ⚠️</option>
+        </select>
+        <button class="btn ghost sm" id="dlReportBtn">⬇ دانلود گزارش این فایل (اکسل)</button>
         <span class="muted" style="font-size:12.5px">گزارش همیشه از «تاریخچه فایل‌های آپلودشده» هم قابل دانلود است</span>
       </div>`;
-    $('#dlReportBtn').onclick = () => downloadXlsx(
-      buildDailyReportRows(norm, r, mgrCol, visitDate, extraErrs),
-      `گزارش-${f.name.replace(/\.[^.]+$/, '')}.xlsx`, 'گزارش بررسی');
+    $('#dlReportBtn').onclick = () => {
+      const kind = $('#dailyReportFilter').value;
+      downloadXlsx(
+        filterReportRows(buildDailyReportRows(norm, r, mgrCol, visitDate, extraErrs), kind),
+        `گزارش-${f.name.replace(/\.[^.]+$/, '')}${REPORT_KIND_SUFFIX[kind] || ''}.xlsx`, 'گزارش بررسی');
+    };
     toast(errs.length ? 'پردازش شد — خطاها را بررسی کنید' : 'همه شماره‌ها با موفقیت ثبت شدند ✅', errs.length ? '' : 'ok');
     loadUploadsTable();
   } catch (e) {
@@ -739,25 +749,37 @@ $('#importPrevBtn').addEventListener('click', async () => {
     const hint0 = uploadOrderHint(await getSubsCount());
     if (hint0) throw new Error(hint0);
 
-    const { rows, subCol, headers, sheetName } = await readWorkbookRows(f);
-    if (!subCol) throw new Error('فایل خالی است');
-    const norm = rows.map(r => ({ no: S.normalizeSubNo(r[subCol]), data: r })).filter(r => r.no);
-    if (!norm.length) throw new Error('هیچ شماره اشتراک معتبری در فایل یافت نشد');
+    // هر شیت جداگانه خوانده می‌شود؛ نام شیت می‌تواند نام مدیر پروژه باشد
+    const buf = await f.arrayBuffer();
+    const sheets = S.parseWorkbookSheets(buf, XLSX);
+    if (!sheets.length) throw new Error('فایل خالی است یا شیتی با داده ندارد');
 
-    let mgrCol = detectManagerCol(headers, subCol);
-    let p_rows, extras, mgrNote;
-    if (mgrCol) {
-      ({ p_rows, extras } = await rowsWithManagers(norm, mgrCol));
-      mgrNote = `ستون مدیر پروژه شناسایی‌شده: «${esc(mgrCol)}»`;
-    } else {
-      const pick = await askManagerForFile(f.name, sheetName || '');
+    let p_rows = [], extras = [];
+    const sheetNotes = [];
+    for (const sh of sheets) {
+      if (!sh.subCol) continue;
+      const norm = sh.rows.map(r => ({ no: S.normalizeSubNo(r[sh.subCol]), data: r })).filter(r => r.no);
+      if (!norm.length) continue;
+
+      // اولویت ۱: ستون مدیر پروژه داخل خود شیت
+      const mgrCol = detectManagerCol(sh.headers, sh.subCol);
+      if (mgrCol) {
+        const res = await rowsWithManagers(norm, mgrCol);
+        p_rows.push(...res.p_rows);
+        extras.push(...res.extras);
+        sheetNotes.push(`شیت «${esc(sh.sheetName)}»: ${faNum(res.p_rows.length)} اشتراک — مدیر از ستون «${esc(mgrCol)}»`);
+        continue;
+      }
+      // اولویت ۲: نام شیت (مثل «شماره اشتراک-دلخوش» یا «دشتی»)؛ وگرنه از کاربر می‌پرسیم
+      const pick = await askManagerForFile(f.name, sh.sheetName);
       const resolve = await buildManagerResolver();
       const mid = await resolve(pick.name);
-      p_rows = norm.map(r => ({ no: r.no, data: r.data, mid }));
-      extras = [];
-      mgrNote = `ستون مدیر پروژه در فایل نبود — همه اشتراک‌ها برای «${esc(pick.name)}» ثبت شدند${pick.auto ? ' (تشخیص خودکار از نام شیت/فایل)' : ''}`;
-      $('#prevResult').innerHTML = '';
+      norm.forEach(r => p_rows.push({ no: r.no, data: r.data, mid }));
+      sheetNotes.push(`شیت «${esc(sh.sheetName)}»: ${faNum(norm.length)} اشتراک — مدیر: ${esc(pick.name)}${pick.auto ? ' (برداشت خودکار از نام شیت)' : ''}`);
     }
+    if (!p_rows.length) throw new Error('هیچ شماره اشتراک معتبری برای واردکردن یافت نشد');
+    const mgrNote = sheetNotes.join('<br>');
+    $('#prevResult').innerHTML = '';
 
     // تکه‌تکه ارسال می‌کنیم تا حجم درخواست‌ها بالا نرود
     const CH = 1000;
@@ -882,9 +904,20 @@ window.deleteUpload = async id => {
 function downloadXlsx(rows, filename, sheetName) {
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'اطلاع': 'داده‌ای وجود ندارد' }]);
+  // فعال‌کردن فیلتر خودکار اکسل روی سرستون‌ها تا گزارش قابل فیلترکردن باشد
+  if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] };
   XLSX.utils.book_append_sheet(wb, ws, (sheetName || 'data').slice(0, 31));
   XLSX.writeFile(wb, filename);
 }
+
+/* فیلتر ردیف‌های گزارش بر اساس نوع نتیجه (ستون «نتیجه بررسی») */
+const REPORT_KINDS = { ok: 'ثبت شد', dup: 'تکراری', nf: 'ناموجود', no_manager: 'بدون مدیر' };
+function filterReportRows(rows, kind) {
+  if (!kind || kind === 'all') return rows;
+  const prefix = REPORT_KINDS[kind];
+  return rows.filter(r => String(r['نتیجه بررسی'] || '').startsWith(prefix));
+}
+const REPORT_KIND_SUFFIX = { all: '', ok: '-ثبت‌شده‌ها', dup: '-تکراری‌ها', nf: '-ناموجودها', no_manager: '-بدون‌مدیر' };
 
 async function fetchAllRecordsView(queryFn) {
   const out = [];
@@ -941,11 +974,22 @@ window.downloadUploadReport = async uploadId => {
       .select('id,filename,visit_date,details,managers(name)').eq('id', uploadId).single();
     if (error) throw new Error(error.message);
     const recs = await fetchAllRecordsView(q => q.eq('upload_id', uploadId));
-    downloadXlsx(
-      buildHistoryReportRows(recs, u.details || {}, u.managers?.name || ''),
-      `گزارش-${(u.filename || 'upload-' + uploadId).replace(/\.[^.]+$/, '')}.xlsx`, 'گزارش بررسی');
+    const kind = $('#historyReportFilter') ? $('#historyReportFilter').value : 'all';
+    const rows = filterReportRows(buildHistoryReportRows(recs, u.details || {}, u.managers?.name || ''), kind);
+    downloadXlsx(rows,
+      `گزارش-${(u.filename || 'upload-' + uploadId).replace(/\.[^.]+$/, '')}${REPORT_KIND_SUFFIX[kind] || ''}.xlsx`, 'گزارش بررسی');
   } catch (e) { toast('خطا: ' + e.message, 'err'); }
 };
+
+/* حذف کلی تاریخچه — ثبت‌شده‌ها حفظ می‌شوند */
+$('#clearHistoryBtn').addEventListener('click', async () => {
+  if (!confirm('تمام تاریخچه فایل‌های آپلودشده پاک شود؟\nاشتراک‌های «ثبت‌شده» در دیتابیس حفظ می‌شوند و خراب نمی‌شوند — فقط لیست تاریخچه خالی می‌شود.')) return;
+  if (!confirm('مطمئن هستید؟ تاریخچه آپلودها به‌طور کامل پاک می‌شود.')) return;
+  const { data, error } = await sb.rpc('delete_all_uploads');
+  if (error) return toast(hintSchema(error), 'err');
+  toast(`تاریخچه پاک شد (${faNum(data.uploads)} فایل) — ${faNum(data.kept_records)} اشتراک ثبت‌شده حفظ شد`, 'ok');
+  loadUploadsTable();
+});
 
 /* ================= subs list ================= */
 let subsPage = 1, subsQ = '';
