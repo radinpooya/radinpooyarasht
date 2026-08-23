@@ -313,6 +313,21 @@ begin
   delete from uploads where id = p_id;   -- records با cascade حذف می‌شوند
 end $$;
 
+-- حذف کلی تاریخچه آپلودها — اشتراک‌های «ثبت‌شده» حفظ می‌شوند (بدون خرابکاری در دیتابیس)
+create or replace function public.delete_all_uploads()
+returns json
+language plpgsql security definer set search_path = public as $$
+declare
+  v_up bigint; v_rec bigint;
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+  select count(*) into v_rec from records;
+  select count(*) into v_up from uploads;
+  update records set upload_id = null where upload_id is not null;  -- رکوردها از فایل جدا می‌شوند تا پاک نشوند
+  delete from uploads;
+  return json_build_object('uploads', v_up, 'kept_records', v_rec);
+end $$;
+
 -- بازنشانی کامل داده‌ها (منطقه خطرناک)
 create or replace function public.reset_all()
 returns void
@@ -334,6 +349,7 @@ revoke all on function public.dashboard_stats(date, date) from public, anon;
 revoke all on function public.recompute_statuses() from public, anon;
 revoke all on function public.delete_upload(bigint) from public, anon;
 revoke all on function public.reset_all() from public, anon;
+revoke all on function public.delete_all_uploads() from public, anon;
 
 grant execute on function public.extract_inspector(jsonb) to authenticated;
 grant execute on function public.process_upload(text, bigint, date, jsonb, text) to authenticated;
@@ -342,6 +358,7 @@ grant execute on function public.dashboard_stats(date, date) to authenticated;
 grant execute on function public.recompute_statuses() to authenticated;
 grant execute on function public.delete_upload(bigint) to authenticated;
 grant execute on function public.reset_all() to authenticated;
+grant execute on function public.delete_all_uploads() to authenticated;
 
 grant select, insert, update, delete on public.managers, public.subs, public.uploads, public.records to authenticated;
 grant select on public.records_view, public.subs_view to authenticated;
