@@ -51,7 +51,6 @@ create index if not exists idx_records_sub_no on public.records(sub_no);
 create index if not exists idx_records_date on public.records(visit_date);
 create index if not exists idx_records_mgr on public.records(manager_id);
 create index if not exists idx_records_upload on public.records(upload_id);
-create unique index if not exists idx_records_sub_no_uniq on public.records(sub_no);
 
 -- ---------- داده اولیه: سه مدیر پروژه ----------
 insert into public.managers (name, color) values
@@ -109,7 +108,7 @@ returns text language plpgsql immutable as $$
 declare
   v text;
 begin
-  select e.value into v
+  select e.v into v
   from jsonb_each_text(coalesce(p_data, '{}'::jsonb)) as e(k, v)
   where e.k ~* '(بازدید|ممیز|بازرس|ناظر|inspector)'
   limit 1;
@@ -131,7 +130,7 @@ declare
   v_new integer := 0;
   v_dup_items jsonb := '[]'::jsonb;
   v_nf_items jsonb := '[]'::jsonb;
-  v_row jsonb; v_no text; v_first bigint;
+  v_row jsonb; v_no text; v_first bigint; v_mid bigint;
   v_pm text; v_pd date; v_pdata jsonb;
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
@@ -144,6 +143,8 @@ begin
     v_no := upper(btrim(coalesce(v_row->>'no', '')));
     if v_no = '' then continue; end if;
     v_total := v_total + 1;
+    -- مدیر پروژه این ردیف (از ستون فایل) — در غیر این صورت پارامتر کلی
+    v_mid := coalesce(nullif(v_row->>'mid', '')::bigint, p_manager_id);
 
     -- ۱) آیا در لیست شرکت گاز هست؟ نه → خطا (ثبت نمی‌شود)
     if not exists (select 1 from subs where sub_no = v_no) then
@@ -152,7 +153,7 @@ begin
       continue;
     end if;
 
-    -- ۲) آیا قبلاً ثبت شده؟ بله → خطا با مشخصات ثبت اول
+    -- ۲) آیا قبلاً ثبت شده؟ بله → خطا با مشخصات ثبت اول (مدیر + ممیز)
     select id into v_first from records where sub_no = v_no order by id limit 1;
     if v_first is not null then
       select m.name, pr.visit_date, pr.data into v_pm, v_pd, v_pdata
@@ -169,7 +170,7 @@ begin
     -- ۳) معتبر و جدید → ثبت می‌شود
     v_new := v_new + 1;
     insert into records (sub_no, manager_id, upload_id, status, data, visit_date)
-    values (v_no, p_manager_id, v_upload_id, 'new',
+    values (v_no, v_mid, v_upload_id, 'new',
             coalesce(v_row->'data', '{}'::jsonb), p_visit_date);
   end loop;
 
@@ -201,7 +202,7 @@ language plpgsql security definer set search_path = public as $$
 declare
   v_upload_id bigint;
   v_total integer := 0; v_added integer := 0; v_dup integer := 0; v_nf integer := 0;
-  v_row jsonb; v_no text;
+  v_row jsonb; v_no text; v_mid bigint;
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
 
@@ -213,6 +214,7 @@ begin
     v_no := upper(btrim(coalesce(v_row->>'no', '')));
     if v_no = '' then continue; end if;
     v_total := v_total + 1;
+    v_mid := coalesce(nullif(v_row->>'mid', '')::bigint, p_manager_id);
 
     if exists (select 1 from records where sub_no = v_no) then
       v_dup := v_dup + 1; continue;                       -- از قبل در سیستم هست
@@ -221,7 +223,7 @@ begin
       v_nf := v_nf + 1; continue;                         -- در لیست شرکت گاز نیست → رد
     end if;
     insert into records (sub_no, manager_id, upload_id, status, data, visit_date)
-    values (v_no, p_manager_id, v_upload_id, 'new',
+    values (v_no, v_mid, v_upload_id, 'new',
             coalesce(v_row->'data', '{}'::jsonb), p_visit_date);
     v_added := v_added + 1;
   end loop;
