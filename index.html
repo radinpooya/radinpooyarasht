@@ -263,7 +263,19 @@
       </div>
 
       <div class="card green">
-        <h3>تاریخچه فایل‌های آپلودشده</h3>
+        <div class="flex mb" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0">تاریخچه فایل‌های آپلودشده</h3>
+          <div class="flex" style="gap:8px;flex-wrap:wrap">
+            <select class="input" id="historyReportFilter" style="padding:6px 10px;font-size:12.5px;width:auto">
+              <option value="all">گزارش: همه موارد</option>
+              <option value="ok">گزارش: فقط ثبت‌شده‌ها ✅</option>
+              <option value="dup">گزارش: فقط تکراری‌ها 🔁</option>
+              <option value="nf">گزارش: فقط ناموجودها ❌</option>
+              <option value="no_manager">گزارش: فقط بدون مدیر ⚠️</option>
+            </select>
+            <button class="btn danger sm" id="clearHistoryBtn">🗑 حذف کلی تاریخچه</button>
+          </div>
+        </div>
         <div class="table-wrap">
           <table id="uploadsTable">
             <thead><tr>
