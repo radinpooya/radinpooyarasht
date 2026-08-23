@@ -21,7 +21,7 @@
     </div>
     <div class="field">
       <label>anon public API key</label>
-      <input class="input" id="setupKey" dir="ltr" placeholder="eyJhbGciOi...">
+      <input class="input" id="setupKey" dir="ltr" placeholder="sb_publishable_... یا eyJ...">
     </div>
     <button class="btn" id="setupBtn" type="submit">اتصال و ادامه</button>
     <div class="login-error" id="setupError"></div>
@@ -85,7 +85,7 @@
     </button>
     <button class="nav-btn" data-tab="records">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/></svg>
-      <span>سوابق ثبت</span>
+      <span>اشتراک‌های ثبت‌شده</span>
     </button>
     <button class="nav-btn" data-tab="settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l-.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -157,7 +157,7 @@
         <div class="table-wrap">
           <table id="mgrTable">
             <thead><tr>
-              <th>مدیر پروژه</th><th>اشتراک معتبر ثبت‌شده</th><th>کل رکوردها</th><th>تکراری</th><th>ناموجود در لیست</th>
+              <th>مدیر پروژه</th><th>اشتراک معتبر ثبت‌شده</th><th>کل رکوردهای ارسالی</th><th>خطای تکراری</th><th>خطای ناموجود</th>
             </tr></thead>
             <tbody></tbody>
           </table>
@@ -199,7 +199,7 @@
     <!-- ======= UPLOAD ======= -->
     <section id="tab-upload" class="hidden">
       <div class="page-title">آپلود فایل</div>
-      <div class="page-desc">فایل‌های اکسل (.xlsx) — ستون شماره اشتراک به‌صورت خودکار تشخیص داده می‌شود</div>
+      <div class="page-desc">فایل‌های اکسل (.xlsx) — ستون شماره اشتراک و ستون ممیز/بازدیدکننده به‌صورت خودکار تشخیص داده می‌شوند</div>
 
       <div class="grid cols-2">
         <div class="card">
@@ -219,27 +219,53 @@
           <div id="masterResult" class="mt"></div>
         </div>
 
-        <div class="card blue">
-          <h3>۲. فایل روزانه بازدیدها (خروجی کارکنان)</h3>
+        <div class="card green">
+          <h3>۲. فایل ثبت‌شده‌های قبلی (فقط بار اول)</h3>
+          <p class="muted mb" style="font-size:12.5px;line-height:2">اگر قبل از این سیستم اشتراک‌هایی ثبت کرده‌اید، فایلش را اینجا وارد کنید تا چکِ تکراری بر اساس آن انجام شود. شماره‌هایی که در لیست شرکت گاز نباشند رد می‌شوند. (فقط یک‌بار، در راه‌اندازی اولیه)</p>
           <div class="form-row mb">
             <div class="field">
               <label>مدیر پروژه</label>
-              <select class="input" id="recordManager"></select>
+              <select class="input" id="prevManager"></select>
             </div>
             <div class="field">
-              <label>تاریخ بازدید (میلادی)</label>
-              <input type="date" class="input" id="recordDate">
+              <label>تاریخ ثبت (میلادی)</label>
+              <input type="date" class="input" id="prevDate">
             </div>
           </div>
           <label class="file-drop mb">
-            <input type="file" id="recordFile" accept=".xlsx,.xls,.csv">
-            <div class="fd-icon">📋</div>
-            <div class="fd-txt">فایل اکسل خروجی امروز را انتخاب کنید</div>
-            <div class="fd-name" id="recordFileName"></div>
+            <input type="file" id="prevFile" accept=".xlsx,.xls,.csv">
+            <div class="fd-icon">📦</div>
+            <div class="fd-txt">فایل اکسل اشتراک‌های ثبت‌شده قبلی</div>
+            <div class="fd-name" id="prevFileName"></div>
           </label>
-          <button class="btn blue" id="recordUploadBtn">آپلود و بررسی خودکار</button>
-          <div id="recordResult" class="mt"></div>
+          <button class="btn" style="background:linear-gradient(135deg,#34d399,#059669)" id="importPrevBtn">واردکردن ثبت‌های قبلی</button>
+          <div id="prevResult" class="mt"></div>
         </div>
+      </div>
+
+      <div class="card blue">
+        <h3>۳. فایل روزانه بازدیدها (آپلود روزانه)</h3>
+        <p class="muted mb" style="font-size:12.5px;line-height:2">هر شماره اشتراک این فایل ابتدا با <b>لیست شرکت گاز</b> چک می‌شود (نبود → خطای ناموجود)، سپس با <b>اشتراک‌های ثبت‌شده</b> (تکراری بود → خطا به‌همراه مدیر پروژه و ممیز ثبت اول). فقط شماره‌های سالم ثبت می‌شوند.</p>
+        <div class="form-row mb">
+          <div class="field">
+            <label>مدیر پروژه</label>
+            <select class="input" id="recordManager"></select>
+          </div>
+          <div class="field">
+            <label>تاریخ بازدید (میلادی)</label>
+            <input type="date" class="input" id="recordDate">
+          </div>
+          <div class="field" style="flex:2">
+            <label>فایل اکسل خروجی امروز</label>
+            <label class="file-drop" style="padding:10px 16px">
+              <input type="file" id="recordFile" accept=".xlsx,.xls,.csv">
+              <span class="fd-txt">📋 انتخاب فایل</span>
+              <span class="fd-name" id="recordFileName"></span>
+            </label>
+          </div>
+          <button class="btn blue" id="recordUploadBtn">آپلود و بررسی خودکار</button>
+        </div>
+        <div id="recordResult"></div>
       </div>
 
       <div class="card green">
@@ -275,8 +301,8 @@
 
     <!-- ======= RECORDS ======= -->
     <section id="tab-records" class="hidden">
-      <div class="page-title">سوابق ثبت</div>
-      <div class="page-desc">تمام شماره اشتراک‌های ثبت‌شده توسط کارکنان (به تفکیک مدیر پروژه)</div>
+      <div class="page-title">اشتراک‌های ثبت‌شده</div>
+      <div class="page-desc">«فایل دوم» — تمام شماره اشتراک‌های معتبری که تاکنون ثبت شده‌اند (به تفکیک مدیر پروژه)</div>
       <div class="card">
         <div class="form-row mb">
           <div class="field" style="flex:2">
@@ -291,7 +317,7 @@
             <label>وضعیت</label>
             <select class="input" id="recStatus">
               <option value="">همه</option>
-              <option value="new">ثبت جدید</option>
+              <option value="new">ثبت شده</option>
               <option value="duplicate">تکراری</option>
               <option value="not_found">ناموجود در لیست</option>
             </select>
@@ -308,7 +334,7 @@
           <button class="btn ghost" id="recExportBtn">⬇ خروجی اکسل</button>
         </div>
         <div class="table-wrap"><table id="recordsTable">
-          <thead><tr><th>شماره اشتراک</th><th>وضعیت</th><th>در لیست شرکت گاز</th><th>تاریخ بازدید</th><th>مدیر پروژه</th><th>فایل</th></tr></thead>
+          <thead><tr><th>شماره اشتراک</th><th>وضعیت</th><th>ممیز</th><th>تاریخ بازدید</th><th>مدیر پروژه</th><th>فایل</th></tr></thead>
           <tbody></tbody>
         </table></div>
         <div class="pager" id="recordsPager"></div>
