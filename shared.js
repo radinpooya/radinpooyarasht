@@ -92,7 +92,6 @@
       wb = XLSXRef.read(txt, { type: 'string' });
     }
     const sheetNames = wb.SheetNames || [];
-    // فایل تک‌شیت: رفتار قبلی
     if (sheetNames.length <= 1) {
       const sheetName = sheetNames[0] || '';
       const ws = wb.Sheets[sheetName];
@@ -137,5 +136,29 @@
     return { rows: out, empty, dupInFile };
   }
 
-  return { normalizeSubNo, normalizeHeader, gridToRows, parseWorkbook, dedupeRows };
+  /**
+   * خواندن همه شیت‌ها به‌صورت جداگانه (برای فایل ثبت‌شده‌های قبلی که نام هر شیت = نام مدیر است)
+   * خروجی: آرایه‌ای از { sheetName, headers, rows, subCol }
+   */
+  function parseWorkbookSheets(buf, XLSXRef) {
+    const u8 = new Uint8Array(buf);
+    let wb;
+    if (u8[0] === 0x50 && u8[1] === 0x4B) {
+      wb = XLSXRef.read(buf, { type: 'array' });
+    } else {
+      const txt = new TextDecoder('utf-8').decode(u8);
+      wb = XLSXRef.read(txt, { type: 'string' });
+    }
+    const out = [];
+    for (const name of (wb.SheetNames || [])) {
+      const ws = wb.Sheets[name];
+      if (!ws) continue;
+      const grid = XLSXRef.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false, blankrows: false });
+      const part = gridToRows(grid);
+      if (part.rows.length) out.push({ ...part, sheetName: name });
+    }
+    return out;
+  }
+
+  return { normalizeSubNo, normalizeHeader, gridToRows, parseWorkbook, parseWorkbookSheets, dedupeRows };
 });
