@@ -73,10 +73,11 @@
    */
   function parseWorkbook(buf, XLSXRef) {
     const wb = XLSXRef.read(buf, { type: 'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    if (!ws) return { headers: [], rows: [], subCol: null };
+    const sheetName = wb.SheetNames[0] || '';
+    const ws = wb.Sheets[sheetName];
+    if (!ws) return { headers: [], rows: [], subCol: null, sheetName: '' };
     const grid = XLSXRef.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false, blankrows: false });
-    return gridToRows(grid);
+    return { ...gridToRows(grid), sheetName };
   }
 
   /** حذف شماره‌های تکراری داخل خود فایل (اولین occurrence نگه داشته می‌شود) */
