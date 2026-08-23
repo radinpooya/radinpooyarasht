@@ -1,7 +1,8 @@
 -- ============================================================
---  سامانه اشتراک‌های گاز — اسکیمای Supabase
---  این فایل را یک‌بار کامل در Supabase SQL Editor اجرا کنید
+--  سامانه اشتراک‌های گاز — اسکیمای Supabase (نسخه ۲)
+--  این فایل را کامل در Supabase SQL Editor اجرا کنید
 --  (Dashboard → SQL Editor → New query → Paste → Run)
+--  ✅ دوباره اجرا کردن آن دیتا را پاک نمی‌کند
 -- ============================================================
 
 -- ---------- جداول ----------
@@ -29,8 +30,10 @@ create table if not exists public.uploads (
   dup_count integer default 0,
   notfound_count integer default 0,
   uploaded_by text,
+  details jsonb default '{}'::jsonb,
   created_at timestamptz default now()
 );
+alter table public.uploads add column if not exists details jsonb default '{}'::jsonb;
 
 create table if not exists public.records (
   id bigint generated always as identity primary key,
@@ -48,6 +51,7 @@ create index if not exists idx_records_sub_no on public.records(sub_no);
 create index if not exists idx_records_date on public.records(visit_date);
 create index if not exists idx_records_mgr on public.records(manager_id);
 create index if not exists idx_records_upload on public.records(upload_id);
+create unique index if not exists idx_records_sub_no_uniq on public.records(sub_no);
 
 -- ---------- داده اولیه: سه مدیر پروژه ----------
 insert into public.managers (name, color) values
@@ -62,12 +66,17 @@ alter table public.subs enable row level security;
 alter table public.uploads enable row level security;
 alter table public.records enable row level security;
 
+drop policy if exists "auth full" on public.managers;
+drop policy if exists "auth full" on public.subs;
+drop policy if exists "auth full" on public.uploads;
+drop policy if exists "auth full" on public.records;
+
 create policy "auth full" on public.managers for all to authenticated using (true) with check (true);
 create policy "auth full" on public.subs for all to authenticated using (true) with check (true);
 create policy "auth full" on public.uploads for all to authenticated using (true) with check (true);
 create policy "auth full" on public.records for all to authenticated using (true) with check (true);
 
--- ---------- ویوها (برای کوئری ساده از سمت سایت) ----------
+-- ---------- ویوها ----------
 create or replace view public.records_view
 with (security_invoker = on) as
 select
@@ -91,10 +100,23 @@ select
 from public.subs s;
 
 -- ============================================================
---  توابع (منطق اصلی — سمت دیتابیس اجرا می‌شود)
+--  توابع
 -- ============================================================
 
--- پردازش فایل روزانه: بررسی تکراری/جدید/ناموجود برای هر شماره اشتراک
+-- استخراج نام ممیز/بازدیدکننده از ستون‌های ردیف اکسل
+create or replace function public.extract_inspector(p_data jsonb)
+returns text language plpgsql immutable as $$
+declare
+  v text;
+begin
+  select e.value into v
+  from jsonb_each_text(coalesce(p_data, '{}'::jsonb)) as e(k, v)
+  where e.k ~* '(بازدید|ممیز|بازرس|ناظر|inspector)'
+  limit 1;
+  return v;
+end $$;
+
+-- فایل روزانه: وجود در لیست گاز؟ → تکراری در ثبت‌شده‌ها؟ → ثبت جدید
 create or replace function public.process_upload(
   p_filename text,
   p_manager_id bigint,
@@ -105,8 +127,12 @@ create or replace function public.process_upload(
 language plpgsql security definer set search_path = public as $$
 declare
   v_upload_id bigint;
-  v_total integer := 0; v_new integer := 0; v_dup integer := 0; v_nf integer := 0;
+  v_total integer := 0;
+  v_new integer := 0;
+  v_dup_items jsonb := '[]'::jsonb;
+  v_nf_items jsonb := '[]'::jsonb;
   v_row jsonb; v_no text; v_first bigint;
+  v_pm text; v_pd date; v_pdata jsonb;
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
 
@@ -119,27 +145,92 @@ begin
     if v_no = '' then continue; end if;
     v_total := v_total + 1;
 
-    select id into v_first from records where sub_no = v_no order by id limit 1;
-
-    if v_first is not null then
-      v_dup := v_dup + 1;
-      insert into records (sub_no, manager_id, upload_id, status, prev_record_id, data, visit_date)
-      values (v_no, p_manager_id, v_upload_id, 'duplicate', v_first, coalesce(v_row->'data','{}'::jsonb), p_visit_date);
-    elsif exists (select 1 from subs where sub_no = v_no) then
-      v_new := v_new + 1;
-      insert into records (sub_no, manager_id, upload_id, status, prev_record_id, data, visit_date)
-      values (v_no, p_manager_id, v_upload_id, 'new', null, coalesce(v_row->'data','{}'::jsonb), p_visit_date);
-    else
-      v_nf := v_nf + 1;
-      insert into records (sub_no, manager_id, upload_id, status, prev_record_id, data, visit_date)
-      values (v_no, p_manager_id, v_upload_id, 'not_found', null, coalesce(v_row->'data','{}'::jsonb), p_visit_date);
+    -- ۱) آیا در لیست شرکت گاز هست؟ نه → خطا (ثبت نمی‌شود)
+    if not exists (select 1 from subs where sub_no = v_no) then
+      v_nf_items := v_nf_items || jsonb_build_object(
+        'no', v_no, 'data', coalesce(v_row->'data', '{}'::jsonb));
+      continue;
     end if;
+
+    -- ۲) آیا قبلاً ثبت شده؟ بله → خطا با مشخصات ثبت اول
+    select id into v_first from records where sub_no = v_no order by id limit 1;
+    if v_first is not null then
+      select m.name, pr.visit_date, pr.data into v_pm, v_pd, v_pdata
+      from records pr left join managers m on m.id = pr.manager_id
+      where pr.id = v_first;
+      v_dup_items := v_dup_items || jsonb_build_object(
+        'no', v_no, 'data', coalesce(v_row->'data', '{}'::jsonb),
+        'prev_date', v_pd,
+        'prev_manager', v_pm,
+        'prev_inspector', public.extract_inspector(v_pdata));
+      continue;
+    end if;
+
+    -- ۳) معتبر و جدید → ثبت می‌شود
+    v_new := v_new + 1;
+    insert into records (sub_no, manager_id, upload_id, status, data, visit_date)
+    values (v_no, p_manager_id, v_upload_id, 'new',
+            coalesce(v_row->'data', '{}'::jsonb), p_visit_date);
   end loop;
 
-  update uploads set total = v_total, new_count = v_new, dup_count = v_dup, notfound_count = v_nf
+  update uploads set
+    total = v_total,
+    new_count = v_new,
+    dup_count = jsonb_array_length(v_dup_items),
+    notfound_count = jsonb_array_length(v_nf_items),
+    details = jsonb_build_object('dupItems', v_dup_items, 'nfItems', v_nf_items)
   where id = v_upload_id;
 
-  return json_build_object('uploadId', v_upload_id, 'total', v_total, 'new', v_new, 'dup', v_dup, 'nf', v_nf);
+  return json_build_object(
+    'uploadId', v_upload_id,
+    'total', v_total, 'new', v_new,
+    'dup', jsonb_array_length(v_dup_items),
+    'nf', jsonb_array_length(v_nf_items),
+    'dupItems', v_dup_items, 'nfItems', v_nf_items);
+end $$;
+
+-- ایمپورت «فایل دوم» (اشتراک‌های ثبت‌شده قبلی) — فقط شماره‌های معتبر و جدید
+create or replace function public.import_registered(
+  p_filename text,
+  p_manager_id bigint,
+  p_visit_date date,
+  p_rows jsonb,
+  p_uploaded_by text default null
+) returns json
+language plpgsql security definer set search_path = public as $$
+declare
+  v_upload_id bigint;
+  v_total integer := 0; v_added integer := 0; v_dup integer := 0; v_nf integer := 0;
+  v_row jsonb; v_no text;
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+
+  insert into uploads (filename, manager_id, visit_date, uploaded_by)
+  values ('[ثبت‌های قبلی] ' || coalesce(p_filename, ''), p_manager_id, p_visit_date, p_uploaded_by)
+  returning id into v_upload_id;
+
+  for v_row in select * from jsonb_array_elements(p_rows) loop
+    v_no := upper(btrim(coalesce(v_row->>'no', '')));
+    if v_no = '' then continue; end if;
+    v_total := v_total + 1;
+
+    if exists (select 1 from records where sub_no = v_no) then
+      v_dup := v_dup + 1; continue;                       -- از قبل در سیستم هست
+    end if;
+    if not exists (select 1 from subs where sub_no = v_no) then
+      v_nf := v_nf + 1; continue;                         -- در لیست شرکت گاز نیست → رد
+    end if;
+    insert into records (sub_no, manager_id, upload_id, status, data, visit_date)
+    values (v_no, p_manager_id, v_upload_id, 'new',
+            coalesce(v_row->'data', '{}'::jsonb), p_visit_date);
+    v_added := v_added + 1;
+  end loop;
+
+  update uploads set total = v_total, new_count = v_added, dup_count = v_dup, notfound_count = v_nf
+  where id = v_upload_id;
+
+  return json_build_object('uploadId', v_upload_id, 'total', v_total,
+                           'added', v_added, 'dup', v_dup, 'nf', v_nf);
 end $$;
 
 -- آمار داشبورد
@@ -162,8 +253,8 @@ begin
                      where exists (select 1 from subs s where s.sub_no = r.sub_no)),
     'totalRows', (select count(*) from records),
     'todayRows', (select count(*) from records where visit_date = current_date),
-    'dupRows', (select count(*) from records where status = 'duplicate'),
-    'nfRows', (select count(*) from records where status = 'not_found'),
+    'dupRows', coalesce((select sum(dup_count) from uploads), 0),
+    'nfRows', coalesce((select sum(notfound_count) from uploads), 0),
     'bar', coalesce((select json_agg(x) from (
         select r.manager_id, count(distinct r.sub_no) as c from records r
         where r.visit_date between v_from and v_to
@@ -175,18 +266,18 @@ begin
           and exists (select 1 from subs s where s.sub_no = r.sub_no)
         group by r.visit_date, r.manager_id order by r.visit_date) y), '[]'::json),
     'mgrStats', coalesce((select json_agg(z) from (
-        select r.manager_id,
-               count(*) as rows_n,
-               count(*) filter (where r.status = 'duplicate') as dups,
-               count(*) filter (where r.status = 'not_found') as nf,
-               count(distinct r.sub_no) as uniq
-        from records r
-        where r.visit_date between v_from and v_to
-        group by r.manager_id) z), '[]'::json)
+        select u.manager_id,
+               sum(u.total) as rows_n,
+               sum(u.dup_count) as dups,
+               sum(u.notfound_count) as nf,
+               sum(u.new_count) as uniq
+        from uploads u
+        where u.visit_date between v_from and v_to
+        group by u.manager_id) z), '[]'::json)
   );
 end $$;
 
--- محاسبه مجدد وضعیت‌ها (بعد از حذف فایل یا جایگزینی لیست)
+-- محاسبه مجدد وضعیت‌ها (سازگاری با داده‌های قدیمی)
 create or replace function public.recompute_statuses()
 returns void
 language plpgsql security definer set search_path = public as $$
@@ -209,21 +300,15 @@ begin
       where id = r.id;
     end if;
   end loop;
-  update uploads u set
-    new_count = (select count(*) from records x where x.upload_id = u.id and x.status = 'new'),
-    dup_count = (select count(*) from records x where x.upload_id = u.id and x.status = 'duplicate'),
-    notfound_count = (select count(*) from records x where x.upload_id = u.id and x.status = 'not_found'),
-    total = (select count(*) from records x where x.upload_id = u.id);
 end $$;
 
--- حذف یک فایل آپلودشده + محاسبه مجدد
+-- حذف یک فایل آپلودشده
 create or replace function public.delete_upload(p_id bigint)
 returns void
 language plpgsql security definer set search_path = public as $$
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
   delete from uploads where id = p_id;   -- records با cascade حذف می‌شوند
-  perform public.recompute_statuses();
 end $$;
 
 -- بازنشانی کامل داده‌ها (منطقه خطرناک)
@@ -239,14 +324,18 @@ begin
     ('مدیر پروژه ۳', '#34d399');
 end $$;
 
--- ---------- دسترسی اجرای توابع فقط برای کاربران لاگین‌شده ----------
+-- ---------- دسترسی‌ها ----------
+revoke all on function public.extract_inspector(jsonb) from public, anon;
 revoke all on function public.process_upload(text, bigint, date, jsonb, text) from public, anon;
+revoke all on function public.import_registered(text, bigint, date, jsonb, text) from public, anon;
 revoke all on function public.dashboard_stats(date, date) from public, anon;
 revoke all on function public.recompute_statuses() from public, anon;
 revoke all on function public.delete_upload(bigint) from public, anon;
 revoke all on function public.reset_all() from public, anon;
 
+grant execute on function public.extract_inspector(jsonb) to authenticated;
 grant execute on function public.process_upload(text, bigint, date, jsonb, text) to authenticated;
+grant execute on function public.import_registered(text, bigint, date, jsonb, text) to authenticated;
 grant execute on function public.dashboard_stats(date, date) to authenticated;
 grant execute on function public.recompute_statuses() to authenticated;
 grant execute on function public.delete_upload(bigint) to authenticated;
@@ -256,4 +345,4 @@ grant select, insert, update, delete on public.managers, public.subs, public.upl
 grant select on public.records_view, public.subs_view to authenticated;
 grant usage on all sequences in schema public to authenticated;
 
--- پایان ✅ حالا از بخش Authentication → Users کاربر ادمین بسازید
+-- پایان ✅
