@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>سامانه اشتراک‌های گاز</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='18' font-size='18'>🔥</text></svg>">
+</head>
+<body>
+
+<!-- ================= SETUP (اتصال به Supabase) ================= -->
+<div id="setupView" class="login-wrap hidden">
+  <form id="setupForm" class="login-card" style="max-width:460px" autocomplete="off">
+    <div class="logo" style="font-size:44px">🔌</div>
+    <h1>اتصال به پایگاه‌داده</h1>
+    <p class="sub">برای اولین استفاده، اطلاعات پروژه Supabase خود را وارد کنید.<br>(در راهنمای README.md مرحله‌به‌مرحله توضیح داده شده)</p>
+    <div class="field">
+      <label>Project URL</label>
+      <input class="input" id="setupUrl" dir="ltr" placeholder="https://xxxx.supabase.co">
+    </div>
+    <div class="field">
+      <label>anon public API key</label>
+      <input class="input" id="setupKey" dir="ltr" placeholder="eyJhbGciOi...">
+    </div>
+    <button class="btn" id="setupBtn" type="submit">اتصال و ادامه</button>
+    <div class="login-error" id="setupError"></div>
+  </form>
+</div>
+
+<!-- ================= LOGIN ================= -->
+<div id="loginView" class="login-wrap hidden">
+  <form id="loginForm" class="login-card" autocomplete="off">
+    <svg class="logo" viewBox="0 0 24 24" fill="none">
+      <path d="M12 2C12 2 5 9.5 5 14.5C5 18.6 8.1 22 12 22C15.9 22 19 18.6 19 14.5C19 9.5 12 2 12 2Z" fill="url(#fg)" opacity="0.9"/>
+      <path d="M12 9C12 9 8.5 12.8 8.5 15.5C8.5 17.7 10.1 19.5 12 19.5C13.9 19.5 15.5 17.7 15.5 15.5C15.5 12.8 12 9 12 9Z" fill="#fff3d6"/>
+      <defs><linearGradient id="fg" x1="5" y1="2" x2="19" y2="22"><stop stop-color="#fbbf24"/><stop offset="1" stop-color="#ea580c"/></linearGradient></defs>
+    </svg>
+    <h1>سامانه اشتراک‌های گاز</h1>
+    <p class="sub">ورود مدیران به پنل مدیریت</p>
+    <div class="field">
+      <label>ایمیل</label>
+      <input class="input" id="loginEmail" dir="ltr" autocomplete="username" placeholder="admin@example.com">
+    </div>
+    <div class="field">
+      <label>رمز عبور</label>
+      <input class="input" type="password" id="loginPass" autocomplete="current-password">
+    </div>
+    <button class="btn" id="loginBtn" type="submit">ورود به سامانه</button>
+    <div class="login-error" id="loginError"></div>
+    <div class="login-hint"><a href="#" id="resetCredsLink" style="color:var(--accent2)">تغییر اتصال پایگاه‌داده</a></div>
+  </form>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="appView" class="layout hidden">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M12 2C12 2 5 9.5 5 14.5C5 18.6 8.1 22 12 22C15.9 22 19 18.6 19 14.5C19 9.5 12 2 12 2Z" fill="url(#fg2)" opacity="0.9"/>
+        <path d="M12 9C12 9 8.5 12.8 8.5 15.5C8.5 17.7 10.1 19.5 12 19.5C13.9 19.5 15.5 17.7 15.5 15.5C15.5 12.8 12 9 12 9Z" fill="#fff3d6"/>
+        <defs><linearGradient id="fg2" x1="5" y1="2" x2="19" y2="22"><stop stop-color="#fbbf24"/><stop offset="1" stop-color="#ea580c"/></linearGradient></defs>
+      </svg>
+      <div>
+        <div class="t1">اشتراک‌های گاز</div>
+        <div class="t2">سامانه ثبت و رهگیری بازدید</div>
+      </div>
+    </div>
+
+    <button class="nav-btn active" data-tab="dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+      <span>داشبورد</span>
+    </button>
+    <button class="nav-btn" data-tab="check">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>
+      <span>بررسی اشتراک</span>
+    </button>
+    <button class="nav-btn" data-tab="upload">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
+      <span>آپلود فایل</span>
+    </button>
+    <button class="nav-btn" data-tab="subs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>
+      <span>اشتراک‌های شرکت گاز</span>
+    </button>
+    <button class="nav-btn" data-tab="records">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/></svg>
+      <span>سوابق ثبت</span>
+    </button>
+    <button class="nav-btn" data-tab="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l-.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span>تنظیمات</span>
+    </button>
+
+    <div class="sidebar-foot">
+      <div class="user-chip">
+        <div class="avatar" id="userAvatar">م</div>
+        <div>
+          <div class="uname" id="userName" style="max-width:130px;overflow:hidden;text-overflow:ellipsis;direction:ltr;text-align:right">-</div>
+          <div class="urole">مدیر سامانه</div>
+        </div>
+      </div>
+      <button class="logout-btn" id="logoutBtn">خروج از حساب</button>
+    </div>
+  </aside>
+
+  <main class="content">
+
+    <!-- ======= DASHBOARD ======= -->
+    <section id="tab-dashboard">
+      <div class="page-title">داشبورد</div>
+      <div class="page-desc">نمای کلی وضعیت اشتراک‌ها و عملکرد مدیران پروژه</div>
+
+      <div class="stats-grid" id="statsGrid"></div>
+
+      <div class="card progress-card">
+        <div class="progress-row">
+          <h3 style="margin:0">پیشرفت بازدیدها</h3>
+          <div class="progress-num" id="progressNum">۰٪</div>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+      </div>
+
+      <div class="card blue">
+        <div class="flex mb">
+          <h3 style="margin:0">نمودار عملکرد مدیران پروژه</h3>
+          <div class="spacer"></div>
+          <button class="btn ghost sm quick-range" data-days="7">۷ روز اخیر</button>
+          <button class="btn ghost sm quick-range" data-days="30">۳۰ روز اخیر</button>
+          <button class="btn ghost sm quick-range" data-days="all">از ابتدا</button>
+        </div>
+        <div class="form-row mb">
+          <div class="field">
+            <label>از تاریخ (میلادی)</label>
+            <input type="date" class="input" id="dashFrom">
+          </div>
+          <div class="field">
+            <label>تا تاریخ (میلادی)</label>
+            <input type="date" class="input" id="dashTo">
+          </div>
+          <button class="btn blue" id="applyRange">اعمال بازه</button>
+        </div>
+        <div class="grid cols-2">
+          <div>
+            <div class="muted mb" style="font-size:13px">📊 مقایسه ثبت معتبر (در بازه انتخابی)</div>
+            <div class="chart-box"><canvas id="barChart"></canvas></div>
+          </div>
+          <div>
+            <div class="muted mb" style="font-size:13px">📈 روند روزانه ثبت معتبر</div>
+            <div class="chart-box"><canvas id="lineChart"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card green">
+        <h3>جدول عملکرد مدیران در بازه</h3>
+        <div class="table-wrap">
+          <table id="mgrTable">
+            <thead><tr>
+              <th>مدیر پروژه</th><th>اشتراک معتبر ثبت‌شده</th><th>کل رکوردها</th><th>تکراری</th><th>ناموجود در لیست</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======= CHECK ======= -->
+    <section id="tab-check" class="hidden">
+      <div class="page-title">بررسی اشتراک</div>
+      <div class="page-desc">مشخص شدن وضعیت شماره اشتراک: موجود بودن در لیست شرکت گاز، ثبت‌شدن قبلی و تمام اطلاعات مربوطه</div>
+
+      <div class="card">
+        <h3>بررسی تکی</h3>
+        <div class="form-row">
+          <div class="field" style="flex:3">
+            <label>شماره اشتراک</label>
+            <input class="input ltr" id="checkInput" placeholder="مثلاً GS-900001" style="direction:ltr;text-align:left">
+          </div>
+          <button class="btn blue" id="checkBtn">بررسی</button>
+        </div>
+      </div>
+      <div id="checkResult"></div>
+
+      <div class="card blue">
+        <h3>بررسی گروهی</h3>
+        <div class="field">
+          <label>لیست شماره اشتراک‌ها (هر خط یک شماره)</label>
+          <textarea class="input ltr" id="bulkInput" style="direction:ltr;text-align:left" placeholder="GS-900001&#10;GS-900002&#10;..."></textarea>
+        </div>
+        <div class="flex">
+          <button class="btn blue" id="bulkBtn">بررسی گروهی</button>
+          <span class="muted" style="font-size:12.5px" id="bulkCount"></span>
+        </div>
+      </div>
+      <div id="bulkResult"></div>
+    </section>
+
+    <!-- ======= UPLOAD ======= -->
+    <section id="tab-upload" class="hidden">
+      <div class="page-title">آپلود فایل</div>
+      <div class="page-desc">فایل‌های اکسل (.xlsx) — ستون شماره اشتراک به‌صورت خودکار تشخیص داده می‌شود</div>
+
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>۱. فایل شرکت گاز (لیست اصلی اشتراک‌ها)</h3>
+          <div class="radio-row">
+            <label><input type="radio" name="masterMode" value="merge" checked> افزودن به لیست فعلی</label>
+            <label><input type="radio" name="masterMode" value="replace"> جایگزینی کامل لیست</label>
+          </div>
+          <label class="file-drop mb">
+            <input type="file" id="masterFile" accept=".xlsx,.xls,.csv">
+            <div class="fd-icon">🏢</div>
+            <div class="fd-txt">فایل اکسل شرکت گاز را انتخاب کنید</div>
+            <div class="fd-name" id="masterFileName"></div>
+          </label>
+          <button class="btn" id="masterUploadBtn">آپلود لیست شرکت گاز</button>
+          <div class="upload-progress hidden" id="masterProgress"><div class="progress-track"><div class="progress-fill" id="masterProgressFill" style="width:0%"></div></div><div class="muted mt" style="font-size:12.5px" id="masterProgressTxt"></div></div>
+          <div id="masterResult" class="mt"></div>
+        </div>
+
+        <div class="card blue">
+          <h3>۲. فایل روزانه بازدیدها (خروجی کارکنان)</h3>
+          <div class="form-row mb">
+            <div class="field">
+              <label>مدیر پروژه</label>
+              <select class="input" id="recordManager"></select>
+            </div>
+            <div class="field">
+              <label>تاریخ بازدید (میلادی)</label>
+              <input type="date" class="input" id="recordDate">
+            </div>
+          </div>
+          <label class="file-drop mb">
+            <input type="file" id="recordFile" accept=".xlsx,.xls,.csv">
+            <div class="fd-icon">📋</div>
+            <div class="fd-txt">فایل اکسل خروجی امروز را انتخاب کنید</div>
+            <div class="fd-name" id="recordFileName"></div>
+          </label>
+          <button class="btn blue" id="recordUploadBtn">آپلود و بررسی خودکار</button>
+          <div id="recordResult" class="mt"></div>
+        </div>
+      </div>
+
+      <div class="card green">
+        <h3>تاریخچه فایل‌های آپلودشده</h3>
+        <div class="table-wrap">
+          <table id="uploadsTable">
+            <thead><tr>
+              <th>#</th><th>نام فایل</th><th>مدیر پروژه</th><th>تاریخ بازدید</th>
+              <th>کل</th><th>جدید</th><th>تکراری</th><th>ناموجود</th><th>ثبت‌کننده</th><th>عملیات</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======= SUBS ======= -->
+    <section id="tab-subs" class="hidden">
+      <div class="page-title">اشتراک‌های شرکت گاز</div>
+      <div class="page-desc">لیست اصلی شماره اشتراک‌هایی که شرکت گاز در اختیار شما قرار داده است</div>
+      <div class="card">
+        <div class="form-row mb">
+          <div class="field" style="flex:3">
+            <label>جستجو در شماره اشتراک‌ها</label>
+            <input class="input ltr" id="subsSearch" style="direction:ltr;text-align:left" placeholder="بخشی از شماره اشتراک...">
+          </div>
+          <button class="btn" id="subsSearchBtn">جستجو</button>
+        </div>
+        <div class="table-wrap"><table id="subsTable"><thead></thead><tbody></tbody></table></div>
+        <div class="pager" id="subsPager"></div>
+      </div>
+    </section>
+
+    <!-- ======= RECORDS ======= -->
+    <section id="tab-records" class="hidden">
+      <div class="page-title">سوابق ثبت</div>
+      <div class="page-desc">تمام شماره اشتراک‌های ثبت‌شده توسط کارکنان (به تفکیک مدیر پروژه)</div>
+      <div class="card">
+        <div class="form-row mb">
+          <div class="field" style="flex:2">
+            <label>جستجوی شماره اشتراک</label>
+            <input class="input ltr" id="recSearch" style="direction:ltr;text-align:left">
+          </div>
+          <div class="field">
+            <label>مدیر پروژه</label>
+            <select class="input" id="recManager"><option value="">همه</option></select>
+          </div>
+          <div class="field">
+            <label>وضعیت</label>
+            <select class="input" id="recStatus">
+              <option value="">همه</option>
+              <option value="new">ثبت جدید</option>
+              <option value="duplicate">تکراری</option>
+              <option value="not_found">ناموجود در لیست</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>از (میلادی)</label>
+            <input type="date" class="input" id="recFrom">
+          </div>
+          <div class="field">
+            <label>تا (میلادی)</label>
+            <input type="date" class="input" id="recTo">
+          </div>
+          <button class="btn blue" id="recFilterBtn">فیلتر</button>
+          <button class="btn ghost" id="recExportBtn">⬇ خروجی اکسل</button>
+        </div>
+        <div class="table-wrap"><table id="recordsTable">
+          <thead><tr><th>شماره اشتراک</th><th>وضعیت</th><th>در لیست شرکت گاز</th><th>تاریخ بازدید</th><th>مدیر پروژه</th><th>فایل</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <div class="pager" id="recordsPager"></div>
+      </div>
+    </section>
+
+    <!-- ======= SETTINGS ======= -->
+    <section id="tab-settings" class="hidden">
+      <div class="page-title">تنظیمات</div>
+      <div class="page-desc">مدیریت مدیران پروژه، حساب کاربری و داده‌ها</div>
+
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>مدیران پروژه</h3>
+          <div class="table-wrap mb"><table id="managersTable">
+            <thead><tr><th>رنگ</th><th>نام</th><th>عملیات</th></tr></thead>
+            <tbody></tbody>
+          </table></div>
+          <div class="form-row">
+            <div class="field" style="flex:3"><label>نام مدیر جدید</label><input class="input" id="newMgrName"></div>
+            <div class="field" style="flex:0 0 70px"><label>رنگ</label><input type="color" class="input" id="newMgrColor" value="#38bdf8"></div>
+            <button class="btn" id="addMgrBtn">افزودن</button>
+          </div>
+        </div>
+
+        <div class="card blue">
+          <h3>حساب‌های ادمین</h3>
+          <div class="note-box mb">
+            ساخت و حذف ادمین‌ها در پنل Supabase انجام می‌شود:<br>
+            <b>Authentication → Users → Add user → Create new user</b>
+            <br><span class="muted">حتماً گزینه «Auto Confirm User» را بزنید تا بدون تأیید ایمیل فعال شود.</span>
+          </div>
+          <table class="kv-table">
+            <tr><td>ادمین فعلی</td><td class="ltr" id="currentAdminEmail">-</td></tr>
+            <tr><td>وضعیت</td><td><span class="badge green">متصل به Supabase ✅</span></td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>تغییر رمز عبور من</h3>
+        <div class="form-row">
+          <div class="field"><label>رمز جدید (حداقل ۶ کاراکتر)</label><input type="password" class="input ltr" id="newPass" style="direction:ltr;text-align:left"></div>
+          <button class="btn" id="changePassBtn">تغییر رمز</button>
+        </div>
+      </div>
+
+      <div class="card red danger-zone">
+        <h3>منطقه خطرناک</h3>
+        <p class="muted mb" style="font-size:13.5px">بازنشانی، تمام داده‌ها (لیست شرکت گاز، سوابق ثبت و فایل‌ها) را حذف می‌کند و قابل بازگشت نیست. حساب‌های ادمین باقی می‌مانند.</p>
+        <button class="btn danger" id="resetBtn">🗑 بازنشانی کامل داده‌ها</button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script src="vendor/supabase.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/chart.umd.js"></script>
+<script src="config.js"></script>
+<script src="shared.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
