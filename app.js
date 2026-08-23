@@ -174,7 +174,7 @@ $$('.nav-btn').forEach(btn => btn.addEventListener('click', () => {
   $$('main.content > section').forEach(s => s.classList.add('hidden'));
   $('#tab-' + tab).classList.remove('hidden');
   if (tab === 'dashboard') loadDashboard();
-  if (tab === 'upload') loadUploadsTable();
+  if (tab === 'upload') { loadUploadsTable(); refreshMasterLiveCount(); }
   if (tab === 'subs') loadSubs();
   if (tab === 'records') loadRecords();
   if (tab === 'settings') loadSettings();
@@ -432,6 +432,28 @@ bindFileName('#masterFile', '#masterFileName');
 bindFileName('#recordFile', '#recordFileName');
 
 /* ================= master upload ================= */
+function uploadOrderHint(subsCount) {
+  return subsCount === 0
+    ? '⚠️ لیست شرکت گاز خالی است! ابتدا از کارت ۱ بالای همین صفحه، فایل اکسل شرکت گاز را آپلود کنید و بعد فایل روزانه را بفرستید.'
+    : null;
+}
+async function getSubsCount() {
+  const { count, error } = await sb.from('subs').select('id', { count: 'exact', head: true });
+  if (error) throw new Error(error.message);
+  return count || 0;
+}
+async function refreshMasterLiveCount() {
+  const el = $('#masterLiveCount');
+  if (!el) return;
+  try {
+    const n = await getSubsCount();
+    el.innerHTML = n > 0
+      ? `✅ لیست فعلی شرکت گاز: <b>${faNum(n)}</b> اشتراک در پایگاه‌داده موجود است`
+      : '⚠️ لیست شرکت گاز هنوز خالی است — فایل ۱ را آپلود کنید';
+    el.style.color = n > 0 ? 'var(--green)' : 'var(--amber)';
+  } catch { el.textContent = ''; }
+}
+
 $('#masterUploadBtn').addEventListener('click', async () => {
   const f = $('#masterFile').files[0];
   if (!f) return toast('فایل اکسل شرکت گاز را انتخاب کنید', 'err');
@@ -450,33 +472,49 @@ $('#masterUploadBtn').addEventListener('click', async () => {
       if (error) throw new Error(error.message);
     }
 
-    // آپلود مرحله‌ای (۵۰۰ ردیف در هر بسته)
-    const CH = 500;
-    let added = 0;
+    // آپلود مرحله‌ای — اندازه بسته بر اساس حجم فایل (فایل‌های بزرگ: بسته‌های بزرگ‌تر)
+    const CH = uniq.length > 50000 ? 3000 : (uniq.length > 5000 ? 1000 : 500);
     $('#masterProgress').classList.remove('hidden');
+    const t0 = Date.now();
+    // شمارش قبل از آپلود برای محاسبه دقیق «جدیدها»
+    const { count: beforeCount } = await sb.from('subs').select('id', { count: 'exact', head: true });
+    let done = 0, retried = 0;
     for (let i = 0; i < uniq.length; i += CH) {
       const chunk = uniq.slice(i, i + CH).map(r => ({ sub_no: r.no, data: r.data }));
-      const { data, error } = await sb.from('subs')
-        .upsert(chunk, { onConflict: 'sub_no', ignoreDuplicates: true })
-        .select('sub_no');
-      if (error) throw new Error(error.message);
-      added += (data || []).length;
-      const pct = Math.round(Math.min(uniq.length, i + CH) * 100 / uniq.length);
+      let err = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { error } = await sb.from('subs')
+          .upsert(chunk, { onConflict: 'sub_no', ignoreDuplicates: true });
+        err = error;
+        if (!err) break;
+        retried++;
+        await new Promise(res => setTimeout(res, 1200 * (attempt + 1)));
+      }
+      if (err) throw new Error(err.message + ` (در ردیف ${faNum(i)})`);
+      done = Math.min(uniq.length, i + CH);
+      const pct = Math.round(done * 100 / uniq.length);
+      const elapsed = (Date.now() - t0) / 1000;
+      const eta = done > 0 ? Math.round(elapsed * (uniq.length - done) / done) : 0;
       $('#masterProgressFill').style.width = pct + '%';
-      $('#masterProgressTxt').textContent = `${faNum(Math.min(uniq.length, i + CH))} از ${faNum(uniq.length)} ردیف...`;
+      $('#masterProgressTxt').textContent = `${faNum(done)} از ${faNum(uniq.length)} ردیف (${faNum(pct)}٪) — حدود ${faNum(eta)} ثانیه مانده`;
     }
     if (mode === 'replace') await sb.rpc('recompute_statuses');
     $('#masterProgress').classList.add('hidden');
     $('#masterProgressFill').style.width = '0%';
 
     const { count } = await sb.from('subs').select('id', { count: 'exact', head: true });
+    const added = Math.max(0, (count || 0) - (beforeCount || 0));
+    const existed = Math.max(0, uniq.length - added);
+    const secs = Math.round((Date.now() - t0) / 1000);
     $('#masterResult').innerHTML = `<div class="flex">
       <span class="badge green">${faNum(added)} اشتراک جدید اضافه شد</span>
-      <span class="badge amber">${faNum(uniq.length - added)} مورد از قبل موجود بود</span>
+      <span class="badge amber">${faNum(existed)} مورد از قبل موجود بود</span>
       <span class="badge blue">کل لیست: ${faNum(count)}</span>
+      <span class="badge gray">⏱️ ${faNum(secs)} ثانیه</span>
     </div>
-    <div class="muted mt" style="font-size:12.5px">ستون شناسایی‌شده: «${esc(subCol)}»${empty ? ` — ${faNum(empty)} ردیف خالی نادیده گرفته شد` : ''}${dupInFile ? ` — ${faNum(dupInFile)} شماره تکراری داخل فایل ادغام شد` : ''}</div>`;
+    <div class="muted mt" style="font-size:12.5px">ستون شناسایی‌شده: «${esc(subCol)}»${empty ? ` — ${faNum(empty)} ردیف خالی نادیده گرفته شد` : ''}${dupInFile ? ` — ${faNum(dupInFile)} شماره تکراری داخل فایل ادغام شد` : ''}${retried ? ` — ${faNum(retried)} بسته دوباره ارسال شد` : ''}</div>`;
     toast('لیست شرکت گاز با موفقیت آپلود شد', 'ok');
+    refreshMasterLiveCount();
   } catch (e) {
     $('#masterProgress').classList.add('hidden');
     toast('خطا: ' + e.message, 'err');
@@ -486,7 +524,7 @@ $('#masterUploadBtn').addEventListener('click', async () => {
 });
 
 /* ================= daily records upload ================= */
-const INSPECTOR_RE = /(بازدید|ممیز|بازرس|ناظر|inspector)/i;
+const INSPECTOR_RE = /(بازدید|ممیز|بازرس|ناظر|تنظیم کنند|تنظیم‌کنند|تهیه کننده|inspector)/i;
 function extractInspector(data) {
   if (!data) return '';
   for (const [k, v] of Object.entries(data)) {
@@ -563,6 +601,11 @@ $('#recordUploadBtn').addEventListener('click', async () => {
   btn.disabled = true; btn.textContent = 'در حال بررسی...';
   $('#recordResult').innerHTML = '';
   try {
+    // قبل از پردازش، مطمئن شو لیست شرکت گاز (فایل ۱) آپلود شده
+    const subsCount = await getSubsCount();
+    const hint0 = uploadOrderHint(subsCount);
+    if (hint0) throw new Error(hint0);
+
     const { rows, subCol, headers } = await readWorkbookRows(f);
     if (!subCol) throw new Error('فایل خالی است');
     const norm = rows.map(r => ({ no: S.normalizeSubNo(r[subCol]), data: r })).filter(r => r.no);
@@ -635,6 +678,49 @@ $('#recordUploadBtn').addEventListener('click', async () => {
 });
 
 /* ================= import previous registrations («فایل دوم») ================= */
+function guessManagerFromName(text) {
+  const t = normalizeName(text);
+  if (!t) return null;
+  // ۱) تطبیق کامل نام
+  let hits = MANAGERS.filter(m => {
+    const n = normalizeName(m.name);
+    return n.length >= 3 && (t.includes(n) || n.includes(t));
+  });
+  if (hits.length === 1) return hits[0];
+  // ۲) تطبیق بر اساس کلمات نام (مثل «دلخوش» داخل «شماره اشتراک-دلخوش»)
+  hits = MANAGERS.filter(m =>
+    String(m.name).trim().split(/[\s‌]+/).some(w => normalizeName(w).length >= 3 && t.includes(normalizeName(w)))
+  );
+  return hits.length === 1 ? hits[0] : null;
+}
+
+/* وقتی فایل ثبت‌شده‌های قبلی ستون مدیر ندارد: حدس از نام شیت/فایل، وگرنه انتخاب دستی */
+function askManagerForFile(fName, sheetName) {
+  const guess = guessManagerFromName(sheetName) || guessManagerFromName(fName);
+  if (guess) return Promise.resolve({ name: guess.name, auto: true });
+  return new Promise((resolve, reject) => {
+    const box = $('#prevResult');
+    box.innerHTML = `<div class="note-box mb">⚠️ ستون «مدیر پروژه» در این فایل پیدا نشد. مدیر پروژه مالک این فهرست را انتخاب کنید یا نامش را بنویسید:</div>
+      <div class="flex">
+        <select class="input" id="prevMgrSel" style="max-width:250px">
+          <option value="">— انتخاب از فهرست —</option>
+          ${MANAGERS.map(m => `<option>${esc(m.name)}</option>`).join('')}
+        </select>
+        <input class="input" id="prevMgrNew" placeholder="یا نام جدید بنویسید" style="max-width:220px">
+        <button class="btn sm" id="prevMgrOk">تأیید</button>
+        <button class="btn ghost sm" id="prevMgrCancel">انصراف</button>
+      </div>`;
+    $('#prevMgrOk').onclick = () => {
+      const newName = $('#prevMgrNew').value.trim();
+      if (newName) return resolve({ name: newName, auto: false });
+      const sel = $('#prevMgrSel');
+      if (sel.value) return resolve({ name: sel.value, auto: false });
+      toast('یک مدیر را انتخاب کنید یا نام جدید بنویسید', 'err');
+    };
+    $('#prevMgrCancel').onclick = () => reject(new Error('__cancelled__'));
+  });
+}
+
 $('#importPrevBtn').addEventListener('click', async () => {
   const f = $('#prevFile').files[0];
   if (!f) return toast('فایل ثبت‌شده‌های قبلی را انتخاب کنید', 'err');
@@ -642,15 +728,29 @@ $('#importPrevBtn').addEventListener('click', async () => {
   btn.disabled = true; btn.textContent = 'در حال واردکردن...';
   $('#prevResult').innerHTML = '';
   try {
-    const { rows, subCol, headers } = await readWorkbookRows(f);
+    // قبل از واردکردن، لیست شرکت گاز باید آپلود شده باشد (چکِ ناموجود)
+    const hint0 = uploadOrderHint(await getSubsCount());
+    if (hint0) throw new Error(hint0);
+
+    const { rows, subCol, headers, sheetName } = await readWorkbookRows(f);
     if (!subCol) throw new Error('فایل خالی است');
     const norm = rows.map(r => ({ no: S.normalizeSubNo(r[subCol]), data: r })).filter(r => r.no);
     if (!norm.length) throw new Error('هیچ شماره اشتراک معتبری در فایل یافت نشد');
 
-    const mgrCol = detectManagerCol(headers, subCol);
-    if (!mgrCol) throw new Error('ستون «مدیر پروژه» در فایل پیدا نشد. ستون‌های فایل: «' + headers.join('»، «') + '»');
-
-    const { p_rows, extras } = await rowsWithManagers(norm, mgrCol);
+    let mgrCol = detectManagerCol(headers, subCol);
+    let p_rows, extras, mgrNote;
+    if (mgrCol) {
+      ({ p_rows, extras } = await rowsWithManagers(norm, mgrCol));
+      mgrNote = `ستون مدیر پروژه شناسایی‌شده: «${esc(mgrCol)}»`;
+    } else {
+      const pick = await askManagerForFile(f.name, sheetName || '');
+      const resolve = await buildManagerResolver();
+      const mid = await resolve(pick.name);
+      p_rows = norm.map(r => ({ no: r.no, data: r.data, mid }));
+      extras = [];
+      mgrNote = `ستون مدیر پروژه در فایل نبود — همه اشتراک‌ها برای «${esc(pick.name)}» ثبت شدند${pick.auto ? ' (تشخیص خودکار از نام شیت/فایل)' : ''}`;
+      $('#prevResult').innerHTML = '';
+    }
 
     // تکه‌تکه ارسال می‌کنیم تا حجم درخواست‌ها بالا نرود
     const CH = 1000;
@@ -674,11 +774,11 @@ $('#importPrevBtn').addEventListener('click', async () => {
       ${nf ? `<span class="badge red">${faNum(nf)} در لیست شرکت گاز نبود و رد شد ❌</span>` : ''}
       ${extras.length ? `<span class="badge gray">${faNum(extras.length)} بدون مدیر رد شد ⚠️</span>` : ''}
     </div>
-    <div class="muted mt" style="font-size:12.5px">ستون مدیر پروژه شناسایی‌شده: «${esc(mgrCol)}» — از این پس چک تکراری فایل‌های روزانه بر اساس همین ثبت‌شده‌ها انجام می‌شود.</div>`;
+    <div class="muted mt" style="font-size:12.5px">${mgrNote} — از این پس چک تکراری فایل‌های روزانه بر اساس همین ثبت‌شده‌ها انجام می‌شود.</div>`;
     toast('ثبت‌های قبلی وارد سیستم شد ✅', 'ok');
     loadUploadsTable();
   } catch (e) {
-    toast(hintSchema(e), 'err');
+    if (e.message !== '__cancelled__') toast(hintSchema(e), 'err');
   } finally {
     btn.disabled = false; btn.textContent = 'واردکردن ثبت‌های قبلی';
   }
