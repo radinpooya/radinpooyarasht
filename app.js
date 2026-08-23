@@ -157,9 +157,8 @@ async function refreshManagers() {
   if (error) { toast(friendlySetupError(error), 'err'); return; }
   MANAGERS = data || [];
   const opts = MANAGERS.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
-  $('#recordManager').innerHTML = opts;
-  $('#prevManager').innerHTML = opts;
-  $('#recManager').innerHTML = '<option value="">همه</option>' + opts;
+  const recMgr = $('#recManager');
+  if (recMgr) recMgr.innerHTML = '<option value="">همه</option>' + opts;
 }
 const mgrColor = id => (MANAGERS.find(m => m.id === id) || {}).color || '#38bdf8';
 
@@ -465,32 +464,91 @@ function extractInspector(data) {
   return '';
 }
 
+/* --- نرمال‌سازی نام‌ها (ی/ک عربی، فاصله و نیم‌فاصله) --- */
+function normalizeName(v) {
+  return String(v ?? '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\s‌]+/g, '').trim();
+}
+
+/* --- تشخیص خودکار ستون مدیر پروژه از هدرهای فایل --- */
+function detectManagerCol(headers, subCol) {
+  const cands = (headers || []).filter(h => h !== subCol);
+  const norm = h => normalizeName(h);
+  let found = cands.find(h => { const n = norm(h); return n.includes('مدیر') && n.includes('پروژه'); });
+  if (!found) found = cands.find(h => norm(h).includes('سرپرست'));
+  if (!found) found = cands.find(h => { const n = norm(h); return (n.includes('مدیر') || n.includes('مسئول')) && !INSPECTOR_RE.test(n); });
+  return found || null;
+}
+
+/* --- ساخت/یافتن مدیر و تبدیل نام‌ها به آیدی --- */
+async function buildManagerResolver() {
+  const cache = new Map(MANAGERS.map(m => [normalizeName(m.name), m.id]));
+  const palette = ['#38bdf8', '#f59e0b', '#34d399', '#a78bfa', '#f87171', '#fbbf24', '#22d3ee'];
+  return async rawName => {
+    const n = normalizeName(rawName);
+    if (cache.has(n)) return cache.get(n);
+    const clean = String(rawName).trim();
+    const { data, error } = await sb.from('managers')
+      .insert({ name: clean, color: palette[cache.size % palette.length] })
+      .select('id').single();
+    if (error) {
+      const { data: ex } = await sb.from('managers').select('id').eq('name', clean).maybeSingle();
+      if (ex) { cache.set(n, ex.id); return ex.id; }
+      throw new Error('ساخت مدیر «' + clean + '» ناموفق بود: ' + error.message);
+    }
+    cache.set(n, data.id);
+    await refreshManagers();
+    toast(`مدیر پروژه جدید «${clean}» ساخته شد`, 'ok');
+    return data.id;
+  };
+}
+async function rowsWithManagers(norm, mgrCol) {
+  const resolve = await buildManagerResolver();
+  const p_rows = [], extras = [];
+  for (const r of norm) {
+    const rawName = (r.data || {})[mgrCol];
+    if (!normalizeName(rawName)) { extras.push({ no: r.no, data: r.data, kind: 'no_manager' }); continue; }
+    p_rows.push({ no: r.no, data: r.data, mid: await resolve(rawName) });
+  }
+  return { p_rows, extras };
+}
+
+/* --- پیام راهنما وقتی schema.sql جدید اجرا نشده --- */
+function hintSchema(e) {
+  const m = String(e?.message || e);
+  if (/does not exist|could not find|schema cache|not find the function|is not a function/i.test(m))
+    return 'نسخه جدید schema.sql اجرا نشده — کل فایل schema.sql جدید را در Supabase ← SQL Editor اجرا کنید و بعد Ctrl+F5 بزنید';
+  return m;
+}
+
 $('#recordDate').value = todayISO();
 $('#prevDate').value = todayISO();
 bindFileName('#prevFile', '#prevFileName');
 
-const selectedMgrName = sel => (MANAGERS.find(m => m.id === Number($(sel).value)) || {}).name || '';
-
 $('#recordUploadBtn').addEventListener('click', async () => {
   const f = $('#recordFile').files[0];
   if (!f) return toast('فایل خروجی روزانه را انتخاب کنید', 'err');
-  if (!$('#recordManager').value) return toast('مدیر پروژه را انتخاب کنید', 'err');
   const btn = $('#recordUploadBtn');
   btn.disabled = true; btn.textContent = 'در حال بررسی...';
   $('#recordResult').innerHTML = '';
   try {
-    const { rows, subCol } = await readWorkbookRows(f);
+    const { rows, subCol, headers } = await readWorkbookRows(f);
     if (!subCol) throw new Error('فایل خالی است');
     const norm = rows.map(r => ({ no: S.normalizeSubNo(r[subCol]), data: r })).filter(r => r.no);
     if (!norm.length) throw new Error('هیچ شماره اشتراک معتبری در فایل یافت نشد');
 
-    const mgrName = selectedMgrName('#recordManager');
+    // تشخیص خودکار ستون مدیر پروژه از داخل فایل
+    const mgrCol = detectManagerCol(headers, subCol);
+    if (!mgrCol) throw new Error('ستون «مدیر پروژه» در فایل پیدا نشد. ستون‌های فایل: «' + headers.join('»، «') + '»');
+
+    const { p_rows, extras: extraErrs } = await rowsWithManagers(norm, mgrCol);
+
     const visitDate = $('#recordDate').value || todayISO();
+    const singleMid = p_rows.length && new Set(p_rows.map(x => x.mid)).size === 1 ? p_rows[0].mid : null;
     const { data: r, error } = await sb.rpc('process_upload', {
       p_filename: f.name,
-      p_manager_id: Number($('#recordManager').value),
+      p_manager_id: singleMid,
       p_visit_date: visitDate,
-      p_rows: norm,
+      p_rows,
       p_uploaded_by: ME.email || null,
     });
     if (error) throw new Error(error.message);
@@ -498,22 +556,30 @@ $('#recordUploadBtn').addEventListener('click', async () => {
     const errs = [
       ...(r.dupItems || []).map(d => ({ ...d, kind: 'duplicate' })),
       ...(r.nfItems || []).map(d => ({ ...d, kind: 'not_found' })),
+      ...extraErrs,
     ];
+    const kindBadge = k => k === 'duplicate'
+      ? '<span class="badge amber">تکراری 🔁</span>'
+      : k === 'not_found'
+        ? '<span class="badge red">ناموجود در لیست ❌</span>'
+        : '<span class="badge gray">مدیر نامشخص ⚠️</span>';
 
     $('#recordResult').innerHTML = `
       <div class="flex mb">
-        <span class="badge blue">${faNum(r.total)} شماره بررسی شد</span>
+        <span class="badge blue">${faNum(r.total + extraErrs.length)} شماره بررسی شد</span>
         <span class="badge green">${faNum(r.new)} ثبت جدید ✅</span>
         ${r.dup ? `<span class="badge amber">${faNum(r.dup)} خطای تکراری 🔁</span>` : ''}
         ${r.nf ? `<span class="badge red">${faNum(r.nf)} خطای ناموجود ❌</span>` : ''}
+        ${extraErrs.length ? `<span class="badge gray">${faNum(extraErrs.length)} بدون مدیر ⚠️</span>` : ''}
       </div>
+      <div class="muted mb" style="font-size:12.5px">ستون‌های شناسایی‌شده: اشتراک «${esc(subCol)}» — مدیر پروژه «${esc(mgrCol)}»${INSPECTOR_RE.test(headers.find(h => INSPECTOR_RE.test(h)) || '') ? ' — ممیز «' + esc(headers.find(h => INSPECTOR_RE.test(h))) + '»' : ''}</div>
       ${errs.length ? `
       <div class="note-box mb" style="border-color:rgba(248,113,113,.4)">⚠️ موارد زیر <b style="color:var(--red)">ثبت نشدند</b> و فقط به‌صورت خطا گزارش می‌شوند:</div>
       <div class="table-wrap mb" style="max-height:280px;overflow-y:auto"><table>
         <thead><tr><th>شماره اشتراک</th><th>نوع خطا</th><th>مدیر پروژه (ثبت اول)</th><th>ممیز (ثبت اول)</th><th>تاریخ ثبت اول</th></tr></thead>
         <tbody>${errs.slice(0, 100).map(e2 => `<tr>
           <td class="ltr">${esc(e2.no)}</td>
-          <td>${e2.kind === 'duplicate' ? '<span class="badge amber">تکراری 🔁</span>' : '<span class="badge red">ناموجود در لیست ❌</span>'}</td>
+          <td>${kindBadge(e2.kind)}</td>
           <td>${e2.kind === 'duplicate' ? esc(e2.prev_manager || '—') : '—'}</td>
           <td>${e2.kind === 'duplicate' ? '<b>' + esc(e2.prev_inspector || '—') + '</b>' : '—'}</td>
           <td>${e2.kind === 'duplicate' ? faDate(e2.prev_date) : '—'}</td>
@@ -522,15 +588,15 @@ $('#recordUploadBtn').addEventListener('click', async () => {
       ${errs.length > 100 ? `<div class="muted mb" style="font-size:12px">+ ${faNum(errs.length - 100)} خطای دیگر — فهرست کامل در فایل گزارش است</div>` : ''}` : ''}
       <div class="flex">
         <button class="btn ghost sm" id="dlReportBtn">⬇ دانلود گزارش کامل این فایل (اکسل)</button>
-        <span class="muted" style="font-size:12.5px">تاریخچه و گزارش همیشه در جدول «تاریخچه فایل‌های آپلودشده» هم موجود است</span>
+        <span class="muted" style="font-size:12.5px">گزارش همیشه از «تاریخچه فایل‌های آپلودشده» هم قابل دانلود است</span>
       </div>`;
     $('#dlReportBtn').onclick = () => downloadXlsx(
-      buildDailyReportRows(norm, r, mgrName, visitDate),
+      buildDailyReportRows(norm, r, mgrCol, visitDate, extraErrs),
       `گزارش-${f.name.replace(/\.[^.]+$/, '')}.xlsx`, 'گزارش بررسی');
     toast(errs.length ? 'پردازش شد — خطاها را بررسی کنید' : 'همه شماره‌ها با موفقیت ثبت شدند ✅', errs.length ? '' : 'ok');
     loadUploadsTable();
   } catch (e) {
-    toast('خطا: ' + e.message, 'err');
+    toast(hintSchema(e), 'err');
   } finally {
     btn.disabled = false; btn.textContent = 'آپلود و بررسی خودکار';
   }
@@ -540,25 +606,29 @@ $('#recordUploadBtn').addEventListener('click', async () => {
 $('#importPrevBtn').addEventListener('click', async () => {
   const f = $('#prevFile').files[0];
   if (!f) return toast('فایل ثبت‌شده‌های قبلی را انتخاب کنید', 'err');
-  if (!$('#prevManager').value) return toast('مدیر پروژه را انتخاب کنید', 'err');
   const btn = $('#importPrevBtn');
   btn.disabled = true; btn.textContent = 'در حال واردکردن...';
   $('#prevResult').innerHTML = '';
   try {
-    const { rows, subCol } = await readWorkbookRows(f);
+    const { rows, subCol, headers } = await readWorkbookRows(f);
     if (!subCol) throw new Error('فایل خالی است');
     const norm = rows.map(r => ({ no: S.normalizeSubNo(r[subCol]), data: r })).filter(r => r.no);
     if (!norm.length) throw new Error('هیچ شماره اشتراک معتبری در فایل یافت نشد');
 
+    const mgrCol = detectManagerCol(headers, subCol);
+    if (!mgrCol) throw new Error('ستون «مدیر پروژه» در فایل پیدا نشد. ستون‌های فایل: «' + headers.join('»، «') + '»');
+
+    const { p_rows, extras } = await rowsWithManagers(norm, mgrCol);
+
     // تکه‌تکه ارسال می‌کنیم تا حجم درخواست‌ها بالا نرود
     const CH = 1000;
     let total = 0, added = 0, dup = 0, nf = 0;
-    for (let i = 0; i < norm.length; i += CH) {
+    for (let i = 0; i < p_rows.length; i += CH) {
       const { data: r, error } = await sb.rpc('import_registered', {
-        p_filename: f.name + (norm.length > CH ? ` (بخش ${Math.floor(i / CH) + 1})` : ''),
-        p_manager_id: Number($('#prevManager').value),
+        p_filename: f.name + (p_rows.length > CH ? ` (بخش ${Math.floor(i / CH) + 1})` : ''),
+        p_manager_id: null,
         p_visit_date: $('#prevDate').value || todayISO(),
-        p_rows: norm.slice(i, i + CH),
+        p_rows: p_rows.slice(i, i + CH),
         p_uploaded_by: ME.email || null,
       });
       if (error) throw new Error(error.message);
@@ -566,43 +636,49 @@ $('#importPrevBtn').addEventListener('click', async () => {
     }
 
     $('#prevResult').innerHTML = `<div class="flex">
-      <span class="badge blue">${faNum(total)} شماره بررسی شد</span>
+      <span class="badge blue">${faNum(total + extras.length)} شماره بررسی شد</span>
       <span class="badge green">${faNum(added)} به ثبت‌شده‌ها اضافه شد ✅</span>
       ${dup ? `<span class="badge amber">${faNum(dup)} از قبل موجود بود</span>` : ''}
       ${nf ? `<span class="badge red">${faNum(nf)} در لیست شرکت گاز نبود و رد شد ❌</span>` : ''}
+      ${extras.length ? `<span class="badge gray">${faNum(extras.length)} بدون مدیر رد شد ⚠️</span>` : ''}
     </div>
-    <div class="muted mt" style="font-size:12.5px">از این پس، چک تکراری فایل‌های روزانه بر اساس همین ثبت‌شده‌ها انجام می‌شود.</div>`;
+    <div class="muted mt" style="font-size:12.5px">ستون مدیر پروژه شناسایی‌شده: «${esc(mgrCol)}» — از این پس چک تکراری فایل‌های روزانه بر اساس همین ثبت‌شده‌ها انجام می‌شود.</div>`;
     toast('ثبت‌های قبلی وارد سیستم شد ✅', 'ok');
     loadUploadsTable();
   } catch (e) {
-    toast('خطا: ' + e.message, 'err');
+    toast(hintSchema(e), 'err');
   } finally {
     btn.disabled = false; btn.textContent = 'واردکردن ثبت‌های قبلی';
   }
 });
 
 /* ================= گزارش اکسل بررسی روزانه ================= */
-function buildDailyReportRows(norm, result, mgrName, visitDate) {
+function buildDailyReportRows(norm, result, mgrCol, visitDate, extraErrs = []) {
   const dupMap = {};
   (result.dupItems || []).forEach(d => dupMap[d.no] = d);
   const nfSet = new Set((result.nfItems || []).map(x => x.no));
+  const noMgrSet = new Set(extraErrs.map(x => x.no));
   const dataKeys = [];
   norm.forEach(r => Object.keys(r.data || {}).forEach(k => {
     if (!dataKeys.includes(k) && dataKeys.length < 20) dataKeys.push(k);
   }));
   const seenOk = new Set();
   return norm.map(r => {
-    const isNf = nfSet.has(r.no);
+    const rawMgr = String((r.data || {})[mgrCol] ?? '').trim();
+    const noMgr = noMgrSet.has(r.no) || !normalizeName(rawMgr);
+    const isNf = !noMgr && nfSet.has(r.no);
+    let dup = (!noMgr && !isNf) ? (dupMap[r.no] || null) : null;
     // اگر همین فایل دوبار شامل شماره بود، اولین occurrence «ثبت شد» است
-    let dup = dupMap[r.no] || null;
-    if (dup && dup.prev_date === visitDate && dup.prev_manager === mgrName && !seenOk.has(r.no)) dup = null;
-    if (!isNf && !dup) seenOk.add(r.no);
+    if (dup && dup.prev_date === visitDate && normalizeName(dup.prev_manager) === normalizeName(rawMgr) && !seenOk.has(r.no)) dup = null;
+    if (!noMgr && !isNf && !dup) seenOk.add(r.no);
     const o = {
       'شماره اشتراک': r.no,
-      'نتیجه بررسی': isNf ? 'ناموجود در لیست شرکت گاز ❌' : dup ? 'تکراری — قبلاً ثبت شده 🔁' : 'ثبت شد ✅',
-      'مدیر پروژه (ثبت اول)': dup ? (dup.prev_manager || '') : (isNf ? '' : mgrName),
+      'نتیجه بررسی': noMgr ? 'بدون مدیر پروژه — ثبت نشد ⚠️'
+        : isNf ? 'ناموجود در لیست شرکت گاز ❌'
+        : dup ? 'تکراری — قبلاً ثبت شده 🔁' : 'ثبت شد ✅',
+      'مدیر پروژه (ثبت اول)': dup ? (dup.prev_manager || '') : (noMgr || isNf ? '' : rawMgr),
       'ممیز (ثبت اول)': dup ? (dup.prev_inspector || '') : '',
-      'تاریخ ثبت اول': dup ? (dup.prev_date || '') : (isNf ? '' : visitDate),
+      'تاریخ ثبت اول': dup ? (dup.prev_date || '') : (noMgr || isNf ? '' : visitDate),
     };
     for (const k of dataKeys) o['اطلاعات فایل | ' + k] = (r.data || {})[k] ?? '';
     return o;
@@ -637,11 +713,11 @@ async function loadUploadsTable() {
   const { data: rows, error } = await sb.from('uploads')
     .select('id,filename,visit_date,total,new_count,dup_count,notfound_count,uploaded_by,details,managers(name)')
     .order('id', { ascending: false }).limit(100);
-  if (error) return toast('خطا: ' + error.message, 'err');
+  if (error) return toast(hintSchema(error), 'err');
   $('#uploadsTable tbody').innerHTML = rows.length ? rows.map(u => `<tr>
     <td>${faNum(u.id)}</td>
     <td class="ltr" style="max-width:180px;overflow:hidden;text-overflow:ellipsis">${esc(u.filename || '—')}</td>
-    <td>${esc(u.managers?.name || '—')}</td>
+    <td>${u.managers?.name ? esc(u.managers.name) : '<span class="badge gray">متنوع</span>'}</td>
     <td>${faDate(u.visit_date)}</td>
     <td>${faNum(u.total)}</td>
     <td style="color:var(--green)">${faNum(u.new_count)}</td>
