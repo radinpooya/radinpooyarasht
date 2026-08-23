@@ -13,7 +13,36 @@ function faDate(iso) {
   const d = String(iso).slice(0, 10);
   try { return faDateFmt.format(new Date(d + 'T12:00:00')); } catch { return d; }
 }
+const faDateNumFmt = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' });
+// تاریخ شمسی عددی: «۱۴۰۳/۰۶/۰۲» — برای خروجی اکسل و راهنمای کنار تاریخ‌ها
+function faDateNum(iso, empty = '') {
+  if (!iso) return empty;
+  const d = String(iso).slice(0, 10);
+  try { return faDateNumFmt.format(new Date(d + 'T12:00:00')); } catch { return d; }
+}
 const todayISO = () => new Date().toISOString().slice(0, 10);
+
+/* راهنمای شمسی زیر همه ورودی‌های تاریخ (کنترل date مرورگر میلادی است) */
+function refreshJalaliHints() {
+  $$('input[type="date"]').forEach(inp => {
+    const span = inp.parentElement && inp.parentElement.querySelector('.jalali-hint[data-for="' + inp.id + '"]');
+    if (span) span.textContent = inp.value ? ('🗓️ معادل شمسی: ' + faDateNum(inp.value) + '  —  ' + faDate(inp.value)) : '';
+  });
+}
+function attachJalaliHints() {
+  $$('input[type="date"]').forEach(inp => {
+    if (!inp.id || inp._jalaliAttached) return;
+    inp._jalaliAttached = true;
+    const span = document.createElement('div');
+    span.className = 'jalali-hint';
+    span.setAttribute('data-for', inp.id);
+    inp.insertAdjacentElement('afterend', span);
+    inp.addEventListener('input', refreshJalaliHints);
+    inp.addEventListener('change', refreshJalaliHints);
+  });
+  refreshJalaliHints();
+}
+attachJalaliHints(); // اسکریپت انتهای body اجرا می‌شود؛ ورودی‌ها موجودند
 
 let toastTimer;
 function toast(msg, type = '') {
@@ -133,6 +162,7 @@ async function boot() {
   $('#currentAdminEmail').textContent = ME.email || '-';
   await refreshManagers();
   $('#recordDate').value = todayISO();
+  refreshJalaliHints();
   loadDashboard();
 }
 
@@ -279,6 +309,7 @@ $$('.quick-range').forEach(b => b.addEventListener('click', () => {
     $('#dashFrom').value = d.toISOString().slice(0, 10);
     $('#dashTo').value = to;
   }
+  refreshJalaliHints();
   loadDashboard();
 }));
 
@@ -522,6 +553,7 @@ function hintSchema(e) {
 
 $('#recordDate').value = todayISO();
 $('#prevDate').value = todayISO();
+refreshJalaliHints();
 bindFileName('#prevFile', '#prevFileName');
 
 $('#recordUploadBtn').addEventListener('click', async () => {
@@ -678,7 +710,7 @@ function buildDailyReportRows(norm, result, mgrCol, visitDate, extraErrs = []) {
         : dup ? 'تکراری — قبلاً ثبت شده 🔁' : 'ثبت شد ✅',
       'مدیر پروژه (ثبت اول)': dup ? (dup.prev_manager || '') : (noMgr || isNf ? '' : rawMgr),
       'ممیز (ثبت اول)': dup ? (dup.prev_inspector || '') : '',
-      'تاریخ ثبت اول': dup ? (dup.prev_date || '') : (noMgr || isNf ? '' : visitDate),
+      'تاریخ ثبت اول': dup ? faDateNum(dup.prev_date) : (noMgr || isNf ? '' : faDateNum(visitDate)),
     };
     for (const k of dataKeys) o['اطلاعات فایل | ' + k] = (r.data || {})[k] ?? '';
     return o;
@@ -691,14 +723,14 @@ function buildHistoryReportRows(recs, details, mgrName) {
     'نتیجه بررسی': 'ثبت شد ✅',
     'مدیر پروژه (ثبت اول)': x.manager_name || mgrName || '',
     'ممیز (ثبت اول)': extractInspector(x.data),
-    'تاریخ ثبت اول': x.visit_date || '',
+    'تاریخ ثبت اول': faDateNum(x.visit_date),
   }));
   (details.dupItems || []).forEach(it => rows.push({
     'شماره اشتراک': it.no,
     'نتیجه بررسی': 'تکراری — قبلاً ثبت شده 🔁',
     'مدیر پروژه (ثبت اول)': it.prev_manager || '',
     'ممیز (ثبت اول)': it.prev_inspector || '',
-    'تاریخ ثبت اول': it.prev_date || '',
+    'تاریخ ثبت اول': faDateNum(it.prev_date),
   }));
   (details.nfItems || []).forEach(it => rows.push({
     'شماره اشتراک': it.no,
@@ -783,11 +815,11 @@ function recordsToExcelRows(recs, masterMap) {
     const o = {
       'شماره اشتراک': r.sub_no,
       'وضعیت': STATUS_FA[r.status] || r.status,
-      'تاریخ بازدید': r.visit_date,
+      'تاریخ بازدید': faDateNum(r.visit_date),
       'مدیر پروژه': r.manager_name || '',
       'فایل': r.filename || '',
       'موجود در لیست شرکت گاز': r.in_master ? 'بله' : 'خیر',
-      'تاریخ اولین ثبت': r.prev_date || '',
+      'تاریخ اولین ثبت': faDateNum(r.prev_date),
       'مدیر اولین ثبت': r.prev_manager || '',
     };
     for (const k of masterKeys) o['اطلاعات | ' + k] = md[k] ?? '';
