@@ -210,11 +210,12 @@
             <label><input type="radio" name="masterMode" value="replace"> جایگزینی کامل لیست</label>
           </div>
           <label class="file-drop mb">
-            <input type="file" id="masterFile" accept=".xlsx,.xls,.csv">
+            <input type="file" id="masterFile" accept=".xlsx,.xls,.csv,.txt">
             <div class="fd-icon">🏢</div>
-            <div class="fd-txt">فایل اکسل شرکت گاز را انتخاب کنید</div>
+            <div class="fd-txt">فایل اکسل یا CSV/TXT شرکت گاز را انتخاب کنید</div>
             <div class="fd-name" id="masterFileName"></div>
           </label>
+          <p class="muted mb" style="font-size:12px;line-height:1.9;margin-top:-6px">💡 برای لیست‌های بالای ۱ میلیون ردیف: فایل <b>CSV/TXT</b> محدودیت ردیف ندارد؛ اگر اکسل است و در چند شیت پخش شده، همه شیت‌ها خودکار خوانده و به‌هم می‌چسبند.</p>
           <button class="btn" id="masterUploadBtn">آپلود لیست شرکت گاز</button>
           <div class="upload-progress hidden" id="masterProgress"><div class="progress-track"><div class="progress-fill" id="masterProgressFill" style="width:0%"></div></div><div class="muted mt" style="font-size:12.5px" id="masterProgressTxt"></div></div>
           <div id="masterResult" class="mt"></div>
@@ -230,7 +231,7 @@
             </div>
           </div>
           <label class="file-drop mb">
-            <input type="file" id="prevFile" accept=".xlsx,.xls,.csv">
+            <input type="file" id="prevFile" accept=".xlsx,.xls,.csv,.txt">
             <div class="fd-icon">📦</div>
             <div class="fd-txt">فایل اکسل اشتراک‌های ثبت‌شده قبلی</div>
             <div class="fd-name" id="prevFileName"></div>
@@ -251,7 +252,7 @@
           <div class="field" style="flex:2">
             <label>فایل اکسل خروجی امروز</label>
             <label class="file-drop" style="padding:10px 16px">
-              <input type="file" id="recordFile" accept=".xlsx,.xls,.csv">
+              <input type="file" id="recordFile" accept=".xlsx,.xls,.csv,.txt">
               <span class="fd-txt">📋 انتخاب فایل</span>
               <span class="fd-name" id="recordFileName"></span>
             </label>
