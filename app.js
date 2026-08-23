@@ -141,7 +141,7 @@ $$('.nav-btn').forEach(btn => btn.addEventListener('click', () => {
   $$('.nav-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   const tab = btn.dataset.tab;
-  $$('main .content > section').forEach(s => s.classList.add('hidden'));
+  $$('main.content > section').forEach(s => s.classList.add('hidden'));
   $('#tab-' + tab).classList.remove('hidden');
   if (tab === 'dashboard') loadDashboard();
   if (tab === 'upload') loadUploadsTable();
@@ -158,6 +158,7 @@ async function refreshManagers() {
   MANAGERS = data || [];
   const opts = MANAGERS.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
   $('#recordManager').innerHTML = opts;
+  $('#prevManager').innerHTML = opts;
   $('#recManager').innerHTML = '<option value="">همه</option>' + opts;
 }
 const mgrColor = id => (MANAGERS.find(m => m.id === id) || {}).color || '#38bdf8';
@@ -290,7 +291,7 @@ async function runCheck(rawNumbers) {
     const chunk = uniq.slice(i, i + 150);
     const [{ data: subs, error: e1 }, { data: recs, error: e2 }] = await Promise.all([
       sb.from('subs').select('sub_no,data').in('sub_no', chunk),
-      sb.from('records_view').select('id,sub_no,visit_date,status,manager_name,filename').in('sub_no', chunk).order('id')
+      sb.from('records_view').select('id,sub_no,visit_date,status,manager_name,filename,data').in('sub_no', chunk).order('id')
     ]);
     if (e1 || e2) throw new Error((e1 || e2).message);
     (subs || []).forEach(s => subMap[s.sub_no] = s.data);
@@ -340,6 +341,7 @@ function renderSingle(r, box) {
     <table class="kv-table table-wrap">
       <tr><td>اولین ثبت</td><td>${faDate(r.first.visit_date)}</td></tr>
       <tr><td>مدیر پروژه (اولین ثبت)</td><td>${esc(r.first.manager_name || '—')}</td></tr>
+      <tr><td>ممیز / بازدیدکننده (اولین ثبت)</td><td><b>${esc(extractInspector(r.first.data) || '—')}</b></td></tr>
       <tr><td>فایل</td><td class="ltr">${esc(r.first.filename || '—')}</td></tr>
       <tr><td>تعداد دفعات ثبت</td><td>${faNum(r.times)} بار</td></tr>
     </table>`;
@@ -371,13 +373,14 @@ $('#bulkBtn').addEventListener('click', async () => {
         <span class="badge amber">${faNum(reg)} قبلاً ثبت شده</span>
       </div>
       <div class="table-wrap" style="max-height:420px;overflow-y:auto"><table>
-        <thead><tr><th>شماره اشتراک</th><th>در لیست گاز</th><th>ثبت شده؟</th><th>اولین ثبت</th><th>مدیر</th><th>دفعات</th></tr></thead>
+        <thead><tr><th>شماره اشتراک</th><th>در لیست گاز</th><th>ثبت شده؟</th><th>اولین ثبت</th><th>مدیر</th><th>ممیز</th><th>دفعات</th></tr></thead>
         <tbody>${rows.map(r => `<tr>
           <td class="ltr">${esc(r.sub_no)}</td>
           <td>${r.in_master ? '<span class="badge green">بله ✅</span>' : '<span class="badge red">خیر ❌</span>'}</td>
           <td>${r.registered ? '<span class="badge amber">بله 🔁</span>' : '<span class="badge blue">نه</span>'}</td>
           <td>${r.first ? faDate(r.first.visit_date) : '—'}</td>
           <td>${esc(r.first?.manager_name || '—')}</td>
+          <td>${esc(extractInspector(r.first?.data) || '—')}</td>
           <td>${faNum(r.times)}</td>
         </tr>`).join('')}</tbody>
       </table></div>
@@ -453,37 +456,78 @@ $('#masterUploadBtn').addEventListener('click', async () => {
 });
 
 /* ================= daily records upload ================= */
+const INSPECTOR_RE = /(بازدید|ممیز|بازرس|ناظر|inspector)/i;
+function extractInspector(data) {
+  if (!data) return '';
+  for (const [k, v] of Object.entries(data)) {
+    if (INSPECTOR_RE.test(k) && String(v).trim()) return String(v).trim();
+  }
+  return '';
+}
+
+$('#recordDate').value = todayISO();
+$('#prevDate').value = todayISO();
+bindFileName('#prevFile', '#prevFileName');
+
+const selectedMgrName = sel => (MANAGERS.find(m => m.id === Number($(sel).value)) || {}).name || '';
+
 $('#recordUploadBtn').addEventListener('click', async () => {
   const f = $('#recordFile').files[0];
   if (!f) return toast('فایل خروجی روزانه را انتخاب کنید', 'err');
   if (!$('#recordManager').value) return toast('مدیر پروژه را انتخاب کنید', 'err');
   const btn = $('#recordUploadBtn');
   btn.disabled = true; btn.textContent = 'در حال بررسی...';
+  $('#recordResult').innerHTML = '';
   try {
     const { rows, subCol } = await readWorkbookRows(f);
     if (!subCol) throw new Error('فایل خالی است');
     const norm = rows.map(r => ({ no: S.normalizeSubNo(r[subCol]), data: r })).filter(r => r.no);
     if (!norm.length) throw new Error('هیچ شماره اشتراک معتبری در فایل یافت نشد');
 
+    const mgrName = selectedMgrName('#recordManager');
+    const visitDate = $('#recordDate').value || todayISO();
     const { data: r, error } = await sb.rpc('process_upload', {
       p_filename: f.name,
       p_manager_id: Number($('#recordManager').value),
-      p_visit_date: $('#recordDate').value || todayISO(),
+      p_visit_date: visitDate,
       p_rows: norm,
       p_uploaded_by: ME.email || null,
     });
     if (error) throw new Error(error.message);
 
+    const errs = [
+      ...(r.dupItems || []).map(d => ({ ...d, kind: 'duplicate' })),
+      ...(r.nfItems || []).map(d => ({ ...d, kind: 'not_found' })),
+    ];
+
     $('#recordResult').innerHTML = `
       <div class="flex mb">
-        <span class="badge blue">${faNum(r.total)} رکورد</span>
+        <span class="badge blue">${faNum(r.total)} شماره بررسی شد</span>
         <span class="badge green">${faNum(r.new)} ثبت جدید ✅</span>
-        <span class="badge amber">${faNum(r.dup)} تکراری 🔁</span>
-        <span class="badge red">${faNum(r.nf)} ناموجود ❌</span>
+        ${r.dup ? `<span class="badge amber">${faNum(r.dup)} خطای تکراری 🔁</span>` : ''}
+        ${r.nf ? `<span class="badge red">${faNum(r.nf)} خطای ناموجود ❌</span>` : ''}
       </div>
-      <div class="muted" style="font-size:12.5px">ستون شناسایی‌شده: «${esc(subCol)}» — ${faNum(norm.length)} شماره معتبر از فایل خوانده شد</div>
-      <div class="mt"><button class="btn ghost sm" onclick="downloadUploadReport(${r.uploadId})">⬇ دانلود گزارش کامل این فایل (اکسل)</button></div>`;
-    toast('فایل با موفقیت پردازش شد', 'ok');
+      ${errs.length ? `
+      <div class="note-box mb" style="border-color:rgba(248,113,113,.4)">⚠️ موارد زیر <b style="color:var(--red)">ثبت نشدند</b> و فقط به‌صورت خطا گزارش می‌شوند:</div>
+      <div class="table-wrap mb" style="max-height:280px;overflow-y:auto"><table>
+        <thead><tr><th>شماره اشتراک</th><th>نوع خطا</th><th>مدیر پروژه (ثبت اول)</th><th>ممیز (ثبت اول)</th><th>تاریخ ثبت اول</th></tr></thead>
+        <tbody>${errs.slice(0, 100).map(e2 => `<tr>
+          <td class="ltr">${esc(e2.no)}</td>
+          <td>${e2.kind === 'duplicate' ? '<span class="badge amber">تکراری 🔁</span>' : '<span class="badge red">ناموجود در لیست ❌</span>'}</td>
+          <td>${e2.kind === 'duplicate' ? esc(e2.prev_manager || '—') : '—'}</td>
+          <td>${e2.kind === 'duplicate' ? '<b>' + esc(e2.prev_inspector || '—') + '</b>' : '—'}</td>
+          <td>${e2.kind === 'duplicate' ? faDate(e2.prev_date) : '—'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+      ${errs.length > 100 ? `<div class="muted mb" style="font-size:12px">+ ${faNum(errs.length - 100)} خطای دیگر — فهرست کامل در فایل گزارش است</div>` : ''}` : ''}
+      <div class="flex">
+        <button class="btn ghost sm" id="dlReportBtn">⬇ دانلود گزارش کامل این فایل (اکسل)</button>
+        <span class="muted" style="font-size:12.5px">تاریخچه و گزارش همیشه در جدول «تاریخچه فایل‌های آپلودشده» هم موجود است</span>
+      </div>`;
+    $('#dlReportBtn').onclick = () => downloadXlsx(
+      buildDailyReportRows(norm, r, mgrName, visitDate),
+      `گزارش-${f.name.replace(/\.[^.]+$/, '')}.xlsx`, 'گزارش بررسی');
+    toast(errs.length ? 'پردازش شد — خطاها را بررسی کنید' : 'همه شماره‌ها با موفقیت ثبت شدند ✅', errs.length ? '' : 'ok');
     loadUploadsTable();
   } catch (e) {
     toast('خطا: ' + e.message, 'err');
@@ -492,10 +536,106 @@ $('#recordUploadBtn').addEventListener('click', async () => {
   }
 });
 
+/* ================= import previous registrations («فایل دوم») ================= */
+$('#importPrevBtn').addEventListener('click', async () => {
+  const f = $('#prevFile').files[0];
+  if (!f) return toast('فایل ثبت‌شده‌های قبلی را انتخاب کنید', 'err');
+  if (!$('#prevManager').value) return toast('مدیر پروژه را انتخاب کنید', 'err');
+  const btn = $('#importPrevBtn');
+  btn.disabled = true; btn.textContent = 'در حال واردکردن...';
+  $('#prevResult').innerHTML = '';
+  try {
+    const { rows, subCol } = await readWorkbookRows(f);
+    if (!subCol) throw new Error('فایل خالی است');
+    const norm = rows.map(r => ({ no: S.normalizeSubNo(r[subCol]), data: r })).filter(r => r.no);
+    if (!norm.length) throw new Error('هیچ شماره اشتراک معتبری در فایل یافت نشد');
+
+    // تکه‌تکه ارسال می‌کنیم تا حجم درخواست‌ها بالا نرود
+    const CH = 1000;
+    let total = 0, added = 0, dup = 0, nf = 0;
+    for (let i = 0; i < norm.length; i += CH) {
+      const { data: r, error } = await sb.rpc('import_registered', {
+        p_filename: f.name + (norm.length > CH ? ` (بخش ${Math.floor(i / CH) + 1})` : ''),
+        p_manager_id: Number($('#prevManager').value),
+        p_visit_date: $('#prevDate').value || todayISO(),
+        p_rows: norm.slice(i, i + CH),
+        p_uploaded_by: ME.email || null,
+      });
+      if (error) throw new Error(error.message);
+      total += r.total; added += r.added; dup += r.dup; nf += r.nf;
+    }
+
+    $('#prevResult').innerHTML = `<div class="flex">
+      <span class="badge blue">${faNum(total)} شماره بررسی شد</span>
+      <span class="badge green">${faNum(added)} به ثبت‌شده‌ها اضافه شد ✅</span>
+      ${dup ? `<span class="badge amber">${faNum(dup)} از قبل موجود بود</span>` : ''}
+      ${nf ? `<span class="badge red">${faNum(nf)} در لیست شرکت گاز نبود و رد شد ❌</span>` : ''}
+    </div>
+    <div class="muted mt" style="font-size:12.5px">از این پس، چک تکراری فایل‌های روزانه بر اساس همین ثبت‌شده‌ها انجام می‌شود.</div>`;
+    toast('ثبت‌های قبلی وارد سیستم شد ✅', 'ok');
+    loadUploadsTable();
+  } catch (e) {
+    toast('خطا: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'واردکردن ثبت‌های قبلی';
+  }
+});
+
+/* ================= گزارش اکسل بررسی روزانه ================= */
+function buildDailyReportRows(norm, result, mgrName, visitDate) {
+  const dupMap = {};
+  (result.dupItems || []).forEach(d => dupMap[d.no] = d);
+  const nfSet = new Set((result.nfItems || []).map(x => x.no));
+  const dataKeys = [];
+  norm.forEach(r => Object.keys(r.data || {}).forEach(k => {
+    if (!dataKeys.includes(k) && dataKeys.length < 20) dataKeys.push(k);
+  }));
+  const seenOk = new Set();
+  return norm.map(r => {
+    const isNf = nfSet.has(r.no);
+    // اگر همین فایل دوبار شامل شماره بود، اولین occurrence «ثبت شد» است
+    let dup = dupMap[r.no] || null;
+    if (dup && dup.prev_date === visitDate && dup.prev_manager === mgrName && !seenOk.has(r.no)) dup = null;
+    if (!isNf && !dup) seenOk.add(r.no);
+    const o = {
+      'شماره اشتراک': r.no,
+      'نتیجه بررسی': isNf ? 'ناموجود در لیست شرکت گاز ❌' : dup ? 'تکراری — قبلاً ثبت شده 🔁' : 'ثبت شد ✅',
+      'مدیر پروژه (ثبت اول)': dup ? (dup.prev_manager || '') : (isNf ? '' : mgrName),
+      'ممیز (ثبت اول)': dup ? (dup.prev_inspector || '') : '',
+      'تاریخ ثبت اول': dup ? (dup.prev_date || '') : (isNf ? '' : visitDate),
+    };
+    for (const k of dataKeys) o['اطلاعات فایل | ' + k] = (r.data || {})[k] ?? '';
+    return o;
+  });
+}
+
+function buildHistoryReportRows(recs, details, mgrName) {
+  const rows = recs.map(x => ({
+    'شماره اشتراک': x.sub_no,
+    'نتیجه بررسی': 'ثبت شد ✅',
+    'مدیر پروژه (ثبت اول)': x.manager_name || mgrName || '',
+    'ممیز (ثبت اول)': extractInspector(x.data),
+    'تاریخ ثبت اول': x.visit_date || '',
+  }));
+  (details.dupItems || []).forEach(it => rows.push({
+    'شماره اشتراک': it.no,
+    'نتیجه بررسی': 'تکراری — قبلاً ثبت شده 🔁',
+    'مدیر پروژه (ثبت اول)': it.prev_manager || '',
+    'ممیز (ثبت اول)': it.prev_inspector || '',
+    'تاریخ ثبت اول': it.prev_date || '',
+  }));
+  (details.nfItems || []).forEach(it => rows.push({
+    'شماره اشتراک': it.no,
+    'نتیجه بررسی': 'ناموجود در لیست شرکت گاز ❌',
+    'مدیر پروژه (ثبت اول)': '', 'ممیز (ثبت اول)': '', 'تاریخ ثبت اول': '',
+  }));
+  return rows;
+}
+
 /* ================= uploads history ================= */
 async function loadUploadsTable() {
   const { data: rows, error } = await sb.from('uploads')
-    .select('id,filename,visit_date,total,new_count,dup_count,notfound_count,uploaded_by,managers(name)')
+    .select('id,filename,visit_date,total,new_count,dup_count,notfound_count,uploaded_by,details,managers(name)')
     .order('id', { ascending: false }).limit(100);
   if (error) return toast('خطا: ' + error.message, 'err');
   $('#uploadsTable tbody').innerHTML = rows.length ? rows.map(u => `<tr>
@@ -582,9 +722,13 @@ function recordsToExcelRows(recs, masterMap) {
 window.downloadUploadReport = async uploadId => {
   try {
     toast('در حال آماده‌سازی گزارش...', 'ok');
+    const { data: u, error } = await sb.from('uploads')
+      .select('id,filename,visit_date,details,managers(name)').eq('id', uploadId).single();
+    if (error) throw new Error(error.message);
     const recs = await fetchAllRecordsView(q => q.eq('upload_id', uploadId));
-    const masterMap = await fetchMasterInfo(recs.map(r => r.sub_no));
-    downloadXlsx(recordsToExcelRows(recs, masterMap), `report-upload-${uploadId}.xlsx`, 'گزارش');
+    downloadXlsx(
+      buildHistoryReportRows(recs, u.details || {}, u.managers?.name || ''),
+      `گزارش-${(u.filename || 'upload-' + uploadId).replace(/\.[^.]+$/, '')}.xlsx`, 'گزارش بررسی');
   } catch (e) { toast('خطا: ' + e.message, 'err'); }
 };
 
@@ -648,11 +792,11 @@ async function loadRecords() {
   $('#recordsTable tbody').innerHTML = data.length ? data.map(r => `<tr>
     <td class="ltr"><b>${esc(r.sub_no)}</b></td>
     <td>${statusBadge(r.status)}</td>
-    <td>${r.in_master ? '<span class="badge green">بله</span>' : '<span class="badge red">خیر</span>'}</td>
+    <td><b>${esc(extractInspector(r.data) || '—')}</b></td>
     <td>${faDate(r.visit_date)}</td>
     <td>${esc(r.manager_name || '—')}</td>
     <td class="ltr" style="max-width:160px;overflow:hidden;text-overflow:ellipsis">${esc(r.filename || '—')}</td>
-  </tr>`).join('') : '<tr><td colspan="6"><div class="empty-state"><div class="big">📋</div>هنوز سابقه‌ای ثبت نشده است</div></td></tr>';
+  </tr>`).join('') : '<tr><td colspan="6"><div class="empty-state"><div class="big">📋</div>هنوز اشتراکی ثبت نشده است</div></td></tr>';
   renderPager($('#recordsPager'), recPage, Math.max(1, Math.ceil(count / 50)), count, pg => { recPage = pg; loadRecords(); });
 }
 
