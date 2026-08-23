@@ -468,12 +468,19 @@ $('#masterUploadBtn').addEventListener('click', async () => {
 
     const mode = document.querySelector('input[name=masterMode]:checked').value;
     if (mode === 'replace') {
-      const { error } = await sb.from('subs').delete().gte('id', 0);
-      if (error) throw new Error(error.message);
+      // حذف مرحله‌ای (در لیست‌های خیلی بزرگ، حذف یک‌جا ممکن است خطای timeout بدهد)
+      const { data: mx } = await sb.from('subs').select('id').order('id', { ascending: false }).limit(1);
+      let hi = mx && mx.length ? mx[0].id : 0;
+      const DEL_STEP = 100000;
+      while (hi > 0) {
+        const { error } = await sb.from('subs').delete().gt('id', hi - DEL_STEP).lte('id', hi);
+        if (error) throw new Error(error.message);
+        hi -= DEL_STEP;
+      }
     }
 
     // آپلود مرحله‌ای — اندازه بسته بر اساس حجم فایل (فایل‌های بزرگ: بسته‌های بزرگ‌تر)
-    const CH = uniq.length > 50000 ? 3000 : (uniq.length > 5000 ? 1000 : 500);
+    const CH = uniq.length > 500000 ? 5000 : (uniq.length > 50000 ? 3000 : (uniq.length > 5000 ? 1000 : 500));
     $('#masterProgress').classList.remove('hidden');
     const t0 = Date.now();
     // شمارش قبل از آپلود برای محاسبه دقیق «جدیدها»
