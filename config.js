@@ -8,5 +8,5 @@
 //    Project URL           → SUPABASE_URL
 //    anon public API key   → SUPABASE_ANON_KEY
 // ============================================================
-const SUPABASE_URL = "";      // مثال: "https://xyzcompany.supabase.co"
-const SUPABASE_ANON_KEY = ""; // کلید anon public
+const SUPABASE_URL = "https://dgrarwdbhhxdmkosnnvz.supabase.co";      
+const SUPABASE_ANON_KEY = "sb_publishable_-GO8pXOw093o0GOb46m0VQ_CxdByz1J"; 
