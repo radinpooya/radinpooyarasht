@@ -294,3 +294,12 @@ td.ltr, th.ltr { direction: ltr; text-align: left; font-family: 'Vazirmatn', mon
 }
 .note-box b { color: var(--accent2); }
 .login-card a { text-decoration: none; }
+
+/* راهنمای تاریخ شمسی زیر ورودی‌های تاریخ */
+.jalali-hint {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 6px;
+  min-height: 16px;
+  letter-spacing: .2px;
+}
