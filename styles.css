@@ -303,3 +303,16 @@ td.ltr, th.ltr { direction: ltr; text-align: left; font-family: 'Vazirmatn', mon
   min-height: 16px;
   letter-spacing: .2px;
 }
+
+/* ============ تب آپلود: چیدمان مرحله‌ای تمیز (آپدیت ۱۰) ============ */
+.phase-label { display: flex; align-items: center; gap: 12px; margin: 20px 2px 12px; }
+.phase-label span { font-weight: 700; font-size: 14px; }
+.phase-label small { color: var(--muted); font-size: 12px; }
+.phase-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.hint-line { color: var(--muted); font-size: 12.5px; line-height: 2; margin: -6px 0 12px; }
+.more-info summary { cursor: pointer; color: var(--muted); font-size: 12.5px; user-select: none; margin: 2px 0 6px; }
+.more-info summary:hover { color: var(--accent2); }
+.more-info summary::marker { color: var(--accent2); }
+.more-info p { color: var(--muted); font-size: 12.5px; line-height: 2; margin: 4px 0 12px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+.file-drop-sm { padding: 10px 14px !important; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.btn-green { background: linear-gradient(135deg, #34d399, #059669) !important; color: #06281c !important; }
