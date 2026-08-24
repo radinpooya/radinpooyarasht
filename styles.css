@@ -316,3 +316,77 @@ td.ltr, th.ltr { direction: ltr; text-align: left; font-family: 'Vazirmatn', mon
 .more-info p { color: var(--muted); font-size: 12.5px; line-height: 2; margin: 4px 0 12px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
 .file-drop-sm { padding: 10px 14px !important; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
 .btn-green { background: linear-gradient(135deg, #34d399, #059669) !important; color: #06281c !important; }
+
+/* ============================================================
+ *  آپدیت ۱۱ — پولیش حرفه‌ای UI بر پایه چک‌لیست ui-ux-pro-max
+ *  ۱) دسترس‌پذیری: فوکوس‌رینگ قابل‌مشاهده + کنتراست
+ *  ۲) تعامل: هدف لمسی ۴۴px، حالت‌های hover/active، بازخورد
+ *  ۳) ثبات: توکن‌های سایه/شعاع/حرکت یکسان در کل سیستم
+ *  ۴) انیمیشن: تایمینگ یکسان + احترام به prefers-reduced-motion
+ * ============================================================ */
+:root {
+  --ease: cubic-bezier(.33, 1, .68, 1);
+  --shadow-1: 0 2px 10px rgba(2, 6, 23, .35);
+  --shadow-2: 0 10px 30px rgba(2, 6, 23, .45);
+  --ring: 0 0 0 3px rgba(56, 189, 248, .35);
+}
+
+/* ---- دکمه‌ها: هدف لمسی ۴۴px + بازخورد حرکتی ---- */
+.btn, .logout-btn { min-height: 44px; transition: transform .16s var(--ease), box-shadow .16s var(--ease), filter .16s var(--ease); }
+.btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--shadow-1); filter: brightness(1.06); }
+.btn:active:not(:disabled) { transform: translateY(0) scale(.985); box-shadow: none; }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn.sm { min-height: 40px; }
+
+/* ---- فوکوس‌رینگ (هرگز حذف نمی‌شود — دسترس‌پذیری) ---- */
+.btn:focus-visible, .input:focus-visible, .nav-btn:focus-visible,
+a:focus-visible, select:focus-visible, summary:focus-visible {
+  outline: none; box-shadow: var(--ring);
+}
+.input:focus { border-color: var(--accent2); box-shadow: 0 0 0 3px rgba(56, 189, 248, .18); }
+
+/* ---- کارت‌ها: سایه لطیف + هاور (بدون جابه‌جایی ناگهانی) ---- */
+.card { box-shadow: var(--shadow-1); transition: box-shadow .2s var(--ease), border-color .2s var(--ease); }
+.card:hover { box-shadow: var(--shadow-2); border-color: rgba(56, 189, 248, .3); }
+.card.red:hover, .danger-zone:hover { border-color: rgba(248, 113, 113, .45) !important; }
+.login-card { box-shadow: var(--shadow-2); }
+
+/* ---- ناوبری سایدبار ---- */
+.nav-btn { min-height: 44px; transition: background .16s var(--ease), color .16s var(--ease), transform .16s var(--ease); }
+.nav-btn:hover { transform: translateX(-2px); }
+
+/* ---- جدول‌ها: ردیف زبرا + هایلایت هاور ---- */
+table tbody tr { transition: background .12s var(--ease); }
+table tbody tr:nth-child(even) { background: rgba(255, 255, 255, .016); }
+table tbody tr:hover { background: rgba(56, 189, 248, .06); }
+
+/* ---- بج‌ها و کارت‌های آمار ---- */
+.badge { transition: transform .14s var(--ease); }
+.badge:hover { transform: translateY(-1px); }
+.stat-card { transition: transform .18s var(--ease), box-shadow .18s var(--ease); }
+.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-1); }
+
+/* ---- نوار پیشرفت: درخشش متحرک (روی رنگ اصلی، بدون تغییر) ---- */
+.progress-fill { position: relative; overflow: hidden; }
+.progress-fill::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(110deg, transparent 25%, rgba(255, 255, 255, .28) 45%, transparent 65%);
+  background-size: 220% 100%;
+  animation: gazShimmer 1.6s linear infinite;
+}
+@keyframes gazShimmer { from { background-position: 200% 0; } to { background-position: -20% 0; } }
+
+/* ---- فایل‌دراپ و توضیحات بازشو ---- */
+.file-drop { transition: border-color .16s var(--ease), background .16s var(--ease), transform .16s var(--ease); }
+.file-drop:hover { transform: translateY(-1px); }
+
+/* ---- اسکرول‌بار ظریف ---- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #22355c; border-radius: 8px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: #2c4a80; }
+
+/* ---- احترام به کاربرانی که انیمیشن نمی‌خواهند ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
