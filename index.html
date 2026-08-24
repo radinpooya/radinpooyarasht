@@ -199,66 +199,88 @@
     <!-- ======= UPLOAD ======= -->
     <section id="tab-upload" class="hidden">
       <div class="page-title">آپلود فایل</div>
-      <div class="page-desc">فایل‌های اکسل (.xlsx) — ستون شماره اشتراک و ستون ممیز/بازدیدکننده به‌صورت خودکار تشخیص داده می‌شوند</div>
+      <div class="page-desc">راه‌اندازی اولیه فقط یک‌بار انجام می‌شود؛ بعد از آن هر روز فقط «فایل روزانه» را آپلود کنید</div>
 
-      <div class="grid cols-2">
-        <div class="card">
-          <h3>۱. فایل شرکت گاز (لیست اصلی اشتراک‌ها)</h3>
-          <div class="muted" id="masterLiveCount" style="font-size:12.5px;margin:-4px 0 10px">در حال بررسی وضعیت لیست...</div>
-          <div class="radio-row">
-            <label><input type="radio" name="masterMode" value="merge" checked> افزودن به لیست فعلی</label>
-            <label><input type="radio" name="masterMode" value="replace"> جایگزینی کامل لیست</label>
-          </div>
-          <label class="file-drop mb">
-            <input type="file" id="masterFile" accept=".xlsx,.xls,.csv,.txt">
-            <div class="fd-icon">🏢</div>
-            <div class="fd-txt">فایل اکسل یا CSV/TXT شرکت گاز را انتخاب کنید</div>
-            <div class="fd-name" id="masterFileName"></div>
-          </label>
-          <p class="muted mb" style="font-size:12px;line-height:1.9;margin-top:-6px">💡 برای لیست‌های بالای ۱ میلیون ردیف: فایل <b>CSV/TXT</b> محدودیت ردیف ندارد؛ اگر اکسل است و در چند شیت پخش شده، همه شیت‌ها خودکار خوانده و به‌هم می‌چسبند.</p>
-          <button class="btn" id="masterUploadBtn">آپلود لیست شرکت گاز</button>
-          <div class="upload-progress hidden" id="masterProgress"><div class="progress-track"><div class="progress-fill" id="masterProgressFill" style="width:0%"></div></div><div class="muted mt" style="font-size:12.5px" id="masterProgressTxt"></div></div>
-          <div id="masterResult" class="mt"></div>
-        </div>
+      <div class="phase-label"><span>🚀 راه‌اندازی اولیه</span><small>فقط یک‌بار</small></div>
 
-        <div class="card green">
-          <h3>۲. فایل ثبت‌شده‌های قبلی (فقط بار اول)</h3>
-          <p class="muted mb" style="font-size:12.5px;line-height:2">اگر قبل از این سیستم اشتراک‌هایی ثبت کرده‌اید، فایلش را اینجا وارد کنید تا چکِ تکراری بر اساس آن انجام شود. مدیر پروژه هر ردیف از ستون «مدیر پروژه» خود فایل خوانده می‌شود و شماره‌های ناموجود در لیست شرکت گاز رد می‌شوند. (فقط یک‌بار، در راه‌اندازی اولیه)</p>
-          <div class="form-row mb">
-            <div class="field">
-              <label>تاریخ ثبت (میلادی)</label>
-              <input type="date" class="input" id="prevDate">
+      <div class="card">
+        <h3>۱. فایل شرکت گاز — لیست اصلی اشتراک‌ها</h3>
+        <div class="hint-line" id="masterLiveCount" style="margin-top:-8px">در حال بررسی وضعیت لیست...</div>
+        <div class="form-row mb">
+          <div class="field" style="flex:0 0 auto;min-width:240px">
+            <label>حالت آپلود</label>
+            <div class="radio-row" style="margin:2px 0 0">
+              <label><input type="radio" name="masterMode" value="merge" checked> افزودن به فعلی</label>
+              <label><input type="radio" name="masterMode" value="replace"> جایگزینی کامل</label>
             </div>
           </div>
-          <label class="file-drop mb">
-            <input type="file" id="prevFile" accept=".xlsx,.xls,.csv,.txt">
-            <div class="fd-icon">📦</div>
-            <div class="fd-txt">فایل اکسل اشتراک‌های ثبت‌شده قبلی</div>
-            <div class="fd-name" id="prevFileName"></div>
-          </label>
-          <button class="btn" style="background:linear-gradient(135deg,#34d399,#059669)" id="importPrevBtn">واردکردن ثبت‌های قبلی</button>
-          <div id="prevResult" class="mt"></div>
+          <div class="field" style="flex:3">
+            <label>فایل اکسل یا CSV/TXT شرکت گاز</label>
+            <label class="file-drop file-drop-sm">
+              <input type="file" id="masterFile" accept=".xlsx,.xls,.csv,.txt">
+              <span class="fd-txt">📄 انتخاب فایل</span>
+              <span class="fd-name" id="masterFileName"></span>
+            </label>
+          </div>
+          <button class="btn" id="masterUploadBtn">آپلود لیست</button>
         </div>
+        <details class="more-info">
+          <summary>💡 فایل‌های خیلی بزرگ (بالای ۱ میلیون ردیف) — راهنما</summary>
+          <p>از فایل <b>CSV/TXT</b> استفاده کنید که محدودیت ردیف ندارد؛ اگر فایل اکسل در چند شیت پخش شده، همه شیت‌ها خودکار خوانده و به‌هم می‌چسبند. «جایگزینی کامل» یعنی لیست قبلی پاک و لیست جدید جایگزین آن می‌شود — برای وقتی است که شرکت گاز لیست جدید می‌فرستد.</p>
+        </details>
+        <div class="upload-progress hidden" id="masterProgress"><div class="progress-track"><div class="progress-fill" id="masterProgressFill" style="width:0%"></div></div><div class="muted mt" style="font-size:12.5px" id="masterProgressTxt"></div></div>
+        <div id="masterResult" class="mt"></div>
       </div>
 
-      <div class="card blue">
-        <h3>۳. فایل روزانه بازدیدها (آپلود روزانه)</h3>
-        <p class="muted mb" style="font-size:12.5px;line-height:2">هر شماره اشتراک این فایل ابتدا با <b>لیست شرکت گاز</b> چک می‌شود (نبود → خطای ناموجود)، سپس با <b>اشتراک‌های ثبت‌شده</b> (تکراری بود → خطا به‌همراه مدیر پروژه و ممیز ثبت اول). فقط شماره‌های سالم ثبت می‌شوند. <b style="color:var(--green)">مدیر پروژه هر ردیف خودکار از ستون «مدیر پروژه» داخل خود فایل تشخیص داده می‌شود</b> — حتی اگر فایل ترکیبی از چند مدیر باشد.</p>
+      <div class="card green">
+        <h3>۲. فایل ثبت‌شده‌های قبلی</h3>
+        <div class="hint-line">اگر قبل از این سیستم اشتراک‌هایی ثبت کرده‌اید، فایلش را یک‌بار وارد کنید تا چکِ تکراری فایل‌های روزانه بر اساس آن‌ها انجام شود.</div>
         <div class="form-row mb">
-          <div class="field">
+          <div class="field" style="flex:1;min-width:170px">
+            <label>تاریخ ثبت (میلادی)</label>
+            <input type="date" class="input" id="prevDate">
+          </div>
+          <div class="field" style="flex:3">
+            <label>فایل اکسل اشتراک‌های ثبت‌شده</label>
+            <label class="file-drop file-drop-sm">
+              <input type="file" id="prevFile" accept=".xlsx,.xls,.csv,.txt">
+              <span class="fd-txt">📦 انتخاب فایل</span>
+              <span class="fd-name" id="prevFileName"></span>
+            </label>
+          </div>
+          <button class="btn btn-green" id="importPrevBtn">واردکردن</button>
+        </div>
+        <details class="more-info">
+          <summary>📖 مدیر پروژه و شماره‌های ناموجود چطور می‌شوند؟</summary>
+          <p>مدیر پروژه هر ردیف از ستون «مدیر پروژه» خود فایل خوانده می‌شود؛ اگر نبود، از نام شیت حدس زده می‌شود یا از شما پرسیده می‌شود. شماره‌های ناموجود در لیست شرکت گاز رد می‌شوند.</p>
+        </details>
+        <div id="prevResult" class="mt"></div>
+      </div>
+
+      <div class="phase-label"><span>📅 کار روزانه</span><small>هر روز فقط این بخش</small></div>
+
+      <div class="card blue">
+        <h3>۳. فایل روزانه بازدیدها</h3>
+        <div class="hint-line">هر شماره ابتدا با <b>لیست شرکت گاز</b> چک می‌شود (نبود → خطای ناموجود ❌)، سپس با <b>ثبت‌شده‌ها</b> (بودن → خطای تکراری 🔁 با مشخصات ثبت اول) — فقط شماره‌های سالم ثبت می‌شوند.</div>
+        <div class="form-row mb">
+          <div class="field" style="flex:1;min-width:170px">
             <label>تاریخ بازدید (میلادی)</label>
             <input type="date" class="input" id="recordDate">
           </div>
-          <div class="field" style="flex:2">
+          <div class="field" style="flex:3">
             <label>فایل اکسل خروجی امروز</label>
-            <label class="file-drop" style="padding:10px 16px">
+            <label class="file-drop file-drop-sm">
               <input type="file" id="recordFile" accept=".xlsx,.xls,.csv,.txt">
               <span class="fd-txt">📋 انتخاب فایل</span>
               <span class="fd-name" id="recordFileName"></span>
             </label>
           </div>
-          <button class="btn blue" id="recordUploadBtn">آپلود و بررسی خودکار</button>
+          <button class="btn blue" id="recordUploadBtn">آپلود و بررسی</button>
         </div>
+        <details class="more-info">
+          <summary>📖 جزئیات تشخیص مدیر و ممیز</summary>
+          <p>مدیر پروژه هر ردیف از ستون «مدیر پروژه» داخل خود فایل تشخیص داده می‌شود — حتی اگر فایل ترکیبی از چند مدیر باشد. نام ممیز/بازدیدکننده هم خودکار از ستون‌هایی مثل «نام تنظیم‌کنندگان فرم» خوانده می‌شود.</p>
+        </details>
         <div id="recordResult"></div>
       </div>
 
@@ -285,6 +307,21 @@
             <tbody></tbody>
           </table>
         </div>
+      </div>
+
+      <div class="card" style="border-color:rgba(56,189,248,.45)">
+        <h3>💾 پشتیبان‌گیری و کار بدون اینترنت</h3>
+        <div class="hint-line">ماهی یک‌بار از داده‌ها پشتیبان بگیرید و روی کامپیوتر یا فلش نگه دارید — حتی در قطعی اینترنت هیچ داده‌ای از دست نمی‌رود.</div>
+        <details class="more-info">
+          <summary>📖 راهنمای کامل پشتیبان‌گیری و روزهای قطعی اینترنت</summary>
+          <p>بازگردانی: فایل CSV لیست با <b>کارت ۱</b> و فایل ثبت‌شده‌ها با <b>کارت ۲</b> آپلود می‌شود. نسخه آفلاین سایت هم این فایل‌ها را می‌پذیرد. جلوگیری از توقف پروژه Supabase (۷ روز بی‌فعالیتی) و مراحل Restore در فایل <b>README.md</b> توضیح داده شده است.</p>
+        </details>
+        <div class="form-row mb">
+          <button class="btn blue" id="backupAllBtn">⬇ دانلود پشتیبان کامل (شماره‌ها + ثبت‌شده‌ها)</button>
+          <a class="btn ghost" href="offline.html" target="_blank">📴 باز کردن نسخه آفلاین</a>
+        </div>
+        <div class="upload-progress hidden" id="backupProgress"><div class="progress-track"><div class="progress-fill" id="backupProgressFill" style="width:0%"></div></div><div class="muted mt" style="font-size:12.5px" id="backupProgressTxt"></div></div>
+        <div id="backupResult" class="mt"></div>
       </div>
     </section>
 
