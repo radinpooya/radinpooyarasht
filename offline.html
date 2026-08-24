@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>سامانه اشتراک‌های گاز — نسخه آفلاین</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='18' font-size='18'>📴</text></svg>">
+<style>
+  .off-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(245,158,11,.14);color:var(--amber);border:1px solid rgba(245,158,11,.35);border-radius:10px;padding:5px 12px;font-size:12.5px;font-weight:700}
+  .stat-mini{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px 12px;text-align:center}
+  .stat-mini .v{font-size:17px;font-weight:700}
+  .stat-mini .l{font-size:11px;color:var(--muted);margin-top:3px}
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M12 2C12 2 5 9.5 5 14.5C5 18.6 8.1 22 12 22C15.9 22 19 18.6 19 14.5C19 9.5 12 2 12 2Z" fill="url(#fgOff)" opacity="0.9"/>
+        <path d="M12 9C12 9 8.5 12.8 8.5 15.5C8.5 17.7 10.1 19.5 12 19.5C13.9 19.5 15.5 17.7 15.5 15.5C15.5 12.8 12 9 12 9Z" fill="#fff3d6"/>
+        <defs><linearGradient id="fgOff" x1="5" y1="2" x2="19" y2="22"><stop stop-color="#fbbf24"/><stop offset="1" stop-color="#ea580c"/></linearGradient></defs>
+      </svg>
+      <div>
+        <div class="t1">سامانه اشتراک گاز</div>
+        <div class="t2">رادین پویا رشت</div>
+      </div>
+    </div>
+
+    <div class="off-badge" style="margin-bottom:12px">📴 حالت آفلاین — بدون نیاز به اینترنت</div>
+
+    <div class="stat-mini" style="margin-bottom:8px"><div class="v" id="stSubs">۰</div><div class="l">اشتراک لیست شرکت گاز</div></div>
+    <div class="stat-mini" style="margin-bottom:8px"><div class="v" id="stRecs">۰</div><div class="l">اشتراک ثبت‌شده (چک تکراری)</div></div>
+    <div class="stat-mini" style="margin-bottom:8px"><div class="v" id="stPending" style="color:var(--amber)">۰</div><div class="l">ثبت جدید در انتظار انتقال</div></div>
+    <div class="muted" style="font-size:11px;line-height:1.8;margin:10px 4px" id="stSaved">—</div>
+
+    <div class="sidebar-foot">
+      <button class="logout-btn" id="offResetBtn">🗑 پاک‌کردن داده‌های آفلاین</button>
+    </div>
+  </aside>
+
+  <!-- ================= CONTENT ================= -->
+  <main class="content">
+    <div class="page-title">نسخه آفلاین سامانه</div>
+    <div class="page-desc">وقتی اینترنت قطع است یا سایت اصلی در دسترس نیست — همان بررسی‌ها: ناموجود در لیست شرکت گاز ❌ و تکراری 🔁 — کاملاً روی همین کامپیوتر، بدون اینترنت</div>
+
+    <div class="note-box mb" style="line-height:2.2">
+      <b>چطور کار می‌کند؟</b><br>
+      ۱) یک‌بار <b>لیست شرکت گاز</b> و <b>اشتراک‌های ثبت‌شده</b> را همین‌جا وارد کنید (یا فایل‌های پشتیبان سایت اصلی را) — داده‌ها در همین مرورگر ذخیره می‌شوند و دفعه بعد نیازی به واردکردن مجدد نیست.<br>
+      ۲) هر روز <b>فایل روزانه</b> را بررسی کنید؛ شماره‌های سالم به‌عنوان «ثبت جدید» ذخیره می‌شوند و از فردا چک تکراری هم کار می‌کند.<br>
+      ۳) وقتی اینترنت برگشت: دکمه «خروجی ثبت‌های جدید» را بزنید و فایل آن را در <b>سایت اصلی ← کارت شماره ۲ (ثبت‌شده‌های قبلی)</b> آپلود کنید تا همه‌چیز به دیتابیس اصلی منتقل شود. ✅
+    </div>
+
+    <div class="grid cols-2">
+      <!-- ========== 1. master ========== -->
+      <div class="card">
+        <h3>۱. فایل شرکت گاز (لیست اصلی اشتراک‌ها)</h3>
+        <div class="radio-row">
+          <label><input type="radio" name="offMasterMode" value="merge" checked> افزودن به لیست فعلی</label>
+          <label><input type="radio" name="offMasterMode" value="replace"> جایگزینی کامل لیست</label>
+        </div>
+        <label class="file-drop mb">
+          <input type="file" id="offMasterFile" accept=".xlsx,.xls,.csv,.txt">
+          <div class="fd-icon">🏢</div>
+          <div class="fd-txt">فایل اکسل یا CSV/TXT شرکت گاز</div>
+          <div class="fd-name" id="offMasterFileName"></div>
+        </label>
+        <p class="muted mb" style="font-size:12px;line-height:1.9;margin-top:-6px">💡 فایل‌های چندشیتی هم پشتیبانی می‌شوند (همه شیت‌ها به‌هم می‌چسبند). برای لیست‌های خیلی بزرگ CSV/TXT بهتر است.</p>
+        <button class="btn" id="offMasterBtn">افزودن به لیست آفلاین</button>
+        <div id="offMasterResult" class="mt"></div>
+      </div>
+
+      <!-- ========== 2. prev records ========== -->
+      <div class="card green">
+        <h3>۲. اشتراک‌های ثبت‌شده (برای چک تکراری)</h3>
+        <p class="muted mb" style="font-size:12.5px;line-height:2">فایل ثبت‌شده‌های قبلی (هر شیت = یک مدیر) یا فایل پشتیبان «ثبت‌شده‌ها» که از سایت اصلی گرفته‌اید را وارد کنید. شماره‌های تکراری و ناموجود خودکار رد می‌شوند.</p>
+        <div class="form-row mb">
+          <div class="field">
+            <label>تاریخ ثبت (میلادی)</label>
+            <input type="date" class="input" id="offPrevDate">
+            <div class="jalali-hint" data-for="offPrevDate"></div>
+          </div>
+        </div>
+        <label class="file-drop mb">
+          <input type="file" id="offPrevFile" accept=".xlsx,.xls,.csv,.txt">
+          <div class="fd-icon">📦</div>
+          <div class="fd-txt">فایل اکسل ثبت‌شده‌ها یا پشتیبان سایت</div>
+          <div class="fd-name" id="offPrevFileName"></div>
+        </label>
+        <button class="btn" style="background:linear-gradient(135deg,#34d399,#059669)" id="offPrevBtn">افزودن ثبت‌شده‌ها</button>
+        <div id="offPrevResult" class="mt"></div>
+      </div>
+    </div>
+
+    <!-- ========== 3. daily ========== -->
+    <div class="card blue" style="margin-top:14px">
+      <h3>۳. فایل روزانه بازدیدها (بررسی روزانه)</h3>
+      <p class="muted mb" style="font-size:12.5px;line-height:2">هر شماره اول با <b>لیست شرکت گاز</b> چک می‌شود (نبود → ناموجود ❌)، بعد با <b>ثبت‌شده‌ها</b> (بودن → تکراری 🔁 با مشخصات ثبت اول). شماره‌های سالم «ثبت جدید» می‌شوند و در همین نسخه ذخیره می‌مانند. مدیر پروژه خودکار از ستون «مدیر پروژه» فایل خوانده می‌شود.</p>
+      <div class="form-row mb">
+        <div class="field">
+          <label>تاریخ بازدید (میلادی)</label>
+          <input type="date" class="input" id="offDate">
+          <div class="jalali-hint" data-for="offDate"></div>
+        </div>
+        <div class="field" style="flex:2">
+          <label>فایل اکسل خروجی امروز</label>
+          <label class="file-drop" style="padding:10px 16px">
+            <input type="file" id="offDailyFile" accept=".xlsx,.xls,.csv,.txt">
+            <span class="fd-txt">📋 انتخاب فایل</span>
+            <span class="fd-name" id="offDailyFileName"></span>
+          </label>
+        </div>
+        <button class="btn blue" id="offDailyBtn">بررسی خودکار</button>
+      </div>
+      <div id="offDailyResult"></div>
+    </div>
+
+    <!-- ========== 4. sync back ========== -->
+    <div class="card red" style="margin-top:14px">
+      <h3>۴. انتقال ثبت‌های جدید به سایت اصلی (بعد از وصل‌شدن اینترنت)</h3>
+      <p class="muted mb" style="font-size:12.5px;line-height:2">وقتی اینترنت وصل شد: فایل خروجی را دانلود کنید و در <b>سایت اصلی ← آپلود فایل ← کارت ۲ (ثبت‌شده‌های قبلی)</b> آپلود کنید — مدیر پروژه و ممیز خودکار از ستون‌های فایل خوانده می‌شوند و شماره‌های تکراری رد می‌شوند. بعد از آپلود موفق، دکمه «پاک‌کردن» را اینجا بزنید.</p>
+      <div class="flex" style="flex-wrap:wrap;gap:8px">
+        <button class="btn" style="background:linear-gradient(135deg,#fbbf24,#ea580c)" id="offExportPendingBtn">⬇ خروجی ثبت‌های جدید (<span id="offPendingCount">۰</span> مورد)</button>
+        <button class="btn ghost" id="offClearPendingBtn">پاک‌کردن لیست انتقال (بعد از آپلود موفق)</button>
+      </div>
+      <div id="offPendingResult" class="mt"></div>
+    </div>
+  </main>
+</div>
+
+<script src="xlsx.full.min.js"></script>
+<script src="shared.js"></script>
+<script>
+/* ============================================================
+ * نسخه آفلاین — بدون Supabase، بدون اینترنت
+ * داده‌ها در IndexedDB همین مرورگر ذخیره می‌شوند
+ * ============================================================ */
+const S = window.GazShared;
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const faNum = n => Number(n || 0).toLocaleString('fa-IR');
+const faDateFmt = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: 'long', day: 'numeric' });
+const faDateNumFmt = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' });
+function faDate(iso) { return iso ? faDateFmt.format(new Date(iso + 'T12:00:00')) : '—'; }
+function faDateNum(iso, empty = '') { try { return iso ? faDateNumFmt.format(new Date(iso + 'T12:00:00')) : empty; } catch { return empty; } }
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+let toastTimer;
+function toast(msg, type = '') {
+  let t = $('#offToast');
+  if (!t) { t = document.createElement('div'); t.id = 'offToast'; t.style.cssText = 'position:fixed;bottom:22px;right:22px;z-index:99;padding:12px 18px;border-radius:12px;background:#1e293b;color:#fff;font-size:13.5px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-width:420px;line-height:1.9'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.style.border = type === 'ok' ? '1px solid #34d399' : type === 'err' ? '1px solid #f87171' : '1px solid #38bdf8';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.textContent = ''; }, 5000);
+}
+
+/* --- همان منطق سایت اصلی: تشخیص ممیز و ستون مدیر پروژه --- */
+const INSPECTOR_RE = /(بازدید|ممیز|بازرس|ناظر|تنظیم کنند|تنظیم‌کنند|ثبت کننده|ثبت‌کننده|تهیه کننده|inspector)/i;
+function extractInspector(data) {
+  if (!data) return '';
+  for (const [k, v] of Object.entries(data)) {
+    if (INSPECTOR_RE.test(k) && String(v).trim()) return String(v).trim();
+  }
+  return '';
+}
+function normalizeName(v) {
+  return String(v ?? '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\s‌]+/g, '').trim();
+}
+function detectManagerCol(headers, subCol) {
+  const cands = (headers || []).filter(h => h !== subCol);
+  const norm = h => normalizeName(h);
+  let found = cands.find(h => { const n = norm(h); return n.includes('مدیر') && n.includes('پروژه'); });
+  if (!found) found = cands.find(h => norm(h).includes('سرپرست'));
+  if (!found) found = cands.find(h => { const n = norm(h); return (n.includes('مدیر') || n.includes('مسئول')) && !INSPECTOR_RE.test(n); });
+  return found || null;
+}
+
+/* ============================================================
+ * وضعیت داده‌ها + ذخیره در IndexedDB
+ * ============================================================ */
+const state = {
+  subs: new Set(),          // شماره‌های لیست شرکت گاز
+  records: new Map(),       // no → { mgr, insp, dISO }
+  pending: [],              // ثبت‌های جدیدِ آفلاین برای انتقال به سایت اصلی
+  mgrs: [],                 // نام مدیرهای دیده‌شده (برای حدس و انتخاب)
+};
+let NO_IDB = false;
+
+const DB_NAME = 'gaz-offline', STORE = 'kv', SUB_CHUNK = 100000;
+function idb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(DB_NAME, 1);
+    r.onupgradeneeded = () => { r.result.createObjectStore(STORE); };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error || new Error('IndexedDB unavailable'));
+  });
+}
+async function idbRun(fn) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    const st = tx.objectStore(STORE);
+    const out = fn(st);
+    tx.oncomplete = () => { db.close(); res(out && out.result !== undefined ? out.result : undefined); };
+    tx.onerror = () => { db.close(); rej(tx.error); };
+  });
+}
+const idbPut = (k, v) => idbRun(st => st.put(v, k));
+const idbGet = k => new Promise(async (res, rej) => {
+  try {
+    const db = await idb();
+    const tx = db.transaction(STORE, 'readonly');
+    const rq = tx.objectStore(STORE).get(k);
+    rq.onsuccess = () => { db.close(); res(rq.result); };
+    rq.onerror = () => { db.close(); rej(rq.error); };
+  } catch (e) { rej(e); }
+});
+async function idbKeys() {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const rq = db.transaction(STORE, 'readonly').objectStore(STORE).getAllKeys();
+    rq.onsuccess = () => { db.close(); res(rq.result); };
+    rq.onerror = () => { db.close(); rej(rq.error); };
+  });
+}
+const idbDel = k => idbRun(st => st.delete(k));
+
+async function saveState() {
+  if (NO_IDB) return;
+  try {
+    // subs به‌صورت تکه‌های ۱۰۰تایی ذخیره می‌شود تا مرورگر له نشود
+    const keys = await idbKeys();
+    for (const k of keys) if (String(k).startsWith('subs_')) await idbDel(k);
+    const arr = [...state.subs];
+    for (let i = 0; i < arr.length; i += SUB_CHUNK) await idbPut('subs_' + Math.floor(i / SUB_CHUNK), arr.slice(i, i + SUB_CHUNK));
+    await idbPut('records', [...state.records.entries()].map(([no, v]) => ({ no, ...v })));
+    await idbPut('pending', state.pending);
+    await idbPut('mgrs', state.mgrs);
+    await idbPut('savedAt', Date.now());
+    renderStats();
+  } catch (e) {
+    NO_IDB = true;
+    console.warn('save failed', e);
+  }
+}
+
+async function loadState() {
+  try {
+    await idb(); // test availability
+    const keys = await idbKeys();
+    if (!keys.length) return;
+    state.subs = new Set();
+    for (const k of keys) {
+      if (String(k).startsWith('subs_')) {
+        const chunk = await idbGet(k);
+        (chunk || []).forEach(n => state.subs.add(n));
+      }
+    }
+    const recs = await idbGet('records') || [];
+    state.records = new Map(recs.map(r => [r.no, { mgr: r.mgr, insp: r.insp, dISO: r.dISO }]));
+    state.pending = await idbGet('pending') || [];
+    state.mgrs = await idbGet('mgrs') || [];
+    renderStats();
+  } catch (e) {
+    NO_IDB = true;
+    renderStats();
+  }
+}
+
+function renderStats() {
+  $('#stSubs').textContent = faNum(state.subs.size);
+  $('#stRecs').textContent = faNum(state.records.size);
+  $('#stPending').textContent = faNum(state.pending.length);
+  $('#offPendingCount').textContent = faNum(state.pending.length);
+  $('#stSaved').innerHTML = NO_IDB
+    ? '⚠️ این مرورگر اجازه ذخیره دائمی نمی‌دهد — داده‌ها فقط تا باز بودن این صفحه حفظ می‌شوند. حتماً از دکمه‌های خروجی، فایل دانلود کنید.'
+    : (state.subs.size || state.records.size
+      ? '✅ ذخیره شد — داده‌ها بعد از بستن مرورگر هم می‌مانند (آخرین ذخیره: ' + new Date().toLocaleString('fa-IR') + ')'
+      : 'داده‌ای ذخیره نشده — از کارت‌های ۱ و ۲ شروع کنید');
+}
+
+/* ============================================================
+ * کارت ۱ — لیست شرکت گاز
+ * ============================================================ */
+function addMasterRows(rows, subCol, mode) {
+  const { rows: uniq, empty, dupInFile } = S.dedupeRows(rows, subCol);
+  if (mode === 'replace') state.subs.clear();
+  let added = 0, existed = 0;
+  for (const r of uniq) {
+    if (state.subs.has(r.no)) existed++; else { state.subs.add(r.no); added++; }
+  }
+  return { added, existed, empty, dupInFile, total: state.subs.size };
+}
+
+$('#offMasterBtn').addEventListener('click', async () => {
+  const f = $('#offMasterFile').files[0];
+  if (!f) return toast('فایل لیست شرکت گاز را انتخاب کنید', 'err');
+  const btn = $('#offMasterBtn');
+  btn.disabled = true; btn.textContent = 'در حال پردازش...';
+  $('#offMasterResult').innerHTML = '<div class="muted">⏳ فایل بزرگ است — چند لحظه صبر کنید...</div>';
+  await new Promise(r => setTimeout(r, 60));
+  try {
+    const buf = await f.arrayBuffer();
+    const { rows, subCol, sheets } = S.parseWorkbook(buf, XLSX);
+    if (!subCol) throw new Error('ستون شماره اشتراک در فایل پیدا نشد');
+    const mode = document.querySelector('input[name=offMasterMode]:checked').value;
+    const r = addMasterRows(rows, subCol, mode);
+    await saveState();
+    $('#offMasterResult').innerHTML = `<div class="flex" style="flex-wrap:wrap;gap:6px">
+      <span class="badge green">${faNum(r.added)} اشتراک جدید اضافه شد</span>
+      <span class="badge amber">${faNum(r.existed)} مورد از قبل موجود بود</span>
+      <span class="badge blue">کل لیست آفلاین: ${faNum(r.total)}</span>
+    </div>
+    <div class="muted mt" style="font-size:12.5px">ستون شناسایی‌شده: «${esc(subCol)}»${sheets ? ' — ' + faNum(sheets) + ' شیت' : ''}${r.dupInFile ? ' — ' + faNum(r.dupInFile) + ' تکراری داخل فایل ادغام شد' : ''}${r.empty ? ' — ' + faNum(r.empty) + ' ردیف خالی نادیده گرفته شد' : ''}</div>`;
+    toast('لیست شرکت گاز آفلاین به‌روز شد ✅', 'ok');
+  } catch (e) {
+    $('#offMasterResult').innerHTML = '';
+    toast('خطا: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'افزودن به لیست آفلاین';
+  }
+});
+
+/* ============================================================
+ * کارت ۲ — ثبت‌شده‌های قبلی
+ * ============================================================ */
+function guessMgrFromText(text) {
+  const t = normalizeName(text);
+  if (!t) return null;
+  let hits = state.mgrs.filter(n => { const m = normalizeName(n); return m.length >= 3 && (t.includes(m) || m.includes(t)); });
+  if (hits.length === 1) return hits[0];
+  hits = state.mgrs.filter(n => String(n).trim().split(/[\s‌]+/).some(w => normalizeName(w).length >= 3 && t.includes(normalizeName(w))));
+  return hits.length === 1 ? hits[0] : null;
+}
+
+/* فرم انتخاب مدیر (بدون وابستگی به دیتابیس) — حدس از نام شیت/فایل یا انتخاب دستی */
+function askManagerOffline(fName, sheetName, boxSel) {
+  const guess = guessMgrFromText(sheetName) || guessMgrFromText(fName);
+  if (guess) return Promise.resolve({ name: guess, auto: true });
+  return new Promise((resolve, reject) => {
+    const box = $(boxSel);
+    box.innerHTML = `<div class="note-box mb">⚠️ ستون «مدیر پروژه» در این فایل${sheetName ? ` (شیت «${esc(sheetName)}»)` : ''} پیدا نشد. مدیر پروژه مالک این فهرست را انتخاب کنید یا بنویسید:</div>
+      <div class="flex" style="flex-wrap:wrap;gap:8px">
+        <select class="input" id="offMgrSel" style="max-width:250px">
+          <option value="">— انتخاب از فهرست —</option>
+          ${state.mgrs.map(m => `<option>${esc(m)}</option>`).join('')}
+        </select>
+        <input class="input" id="offMgrNew" placeholder="یا نام جدید بنویسید" style="max-width:220px">
+        <button class="btn sm" id="offMgrOk">تأیید</button>
+        <button class="btn ghost sm" id="offMgrCancel">انصراف</button>
+      </div>`;
+    $('#offMgrOk').onclick = () => {
+      const newName = $('#offMgrNew').value.trim();
+      if (newName) return resolve({ name: newName, auto: false });
+      const sel = $('#offMgrSel');
+      if (sel.value) return resolve({ name: sel.value, auto: false });
+      toast('یک مدیر را انتخاب کنید یا نام جدید بنویسید', 'err');
+    };
+    $('#offMgrCancel').onclick = () => reject(new Error('__cancelled__'));
+  });
+}
+function addMgrName(name) {
+  const clean = String(name || '').trim();
+  if (clean && !state.mgrs.includes(clean)) state.mgrs.push(clean);
+}
+
+/* افزودن یک شیت ثبت‌شده‌ها: خروجی {ok, dup, nf, empty} */
+function addPrevSheet(headers, rows, subCol, sheetName, fName, dateISO, boxSel) {
+  const mgrCol = detectManagerCol(headers, subCol);
+  const res = { ok: 0, dup: 0, nf: 0, note: '' };
+  const list = [];
+  for (const r of rows) {
+    const no = S.normalizeSubNo(r[subCol]);
+    if (!no) continue;
+    let mgr = mgrCol ? String(r[mgrCol] ?? '').trim() : '';
+    if (mgrCol && !normalizeName(mgr)) mgr = '';
+    list.push({ no, mgr: mgr || null, insp: extractInspector(r) });
+  }
+  if (!list.length) { res.note = 'شیت «' + sheetName + '»: شماره اشتراکی نداشت'; return Promise.resolve(res); }
+  const apply = manualMgr => {
+    for (const it of list) {
+      if (state.records.has(it.no)) { res.dup++; continue; }
+      if (state.subs.size && !state.subs.has(it.no)) { res.nf++; continue; } // چک ناموجود فقط وقتی لیست اصلی وارد شده
+      const mgr = it.mgr || manualMgr;
+      if (!normalizeName(mgr)) { res.nf++; continue; }
+      addMgrName(mgr);
+      state.records.set(it.no, { mgr, insp: it.insp, dISO: dateISO });
+      res.ok++;
+    }
+    res.note = `شیت «${sheetName}»: ${faNum(res.ok)} اضافه شد` +
+      (mgrCol ? ` — مدیر از ستون «${mgrCol}»` : (manualMgr ? ` — مدیر: ${manualMgr}` : '')) +
+      (res.dup ? ` — ${faNum(res.dup)} تکراری رد شد` : '') + (res.nf ? ` — ${faNum(res.nf)} ناموجود/بی‌مدیر رد شد` : '');
+    return res;
+  };
+  if (mgrCol) return Promise.resolve(apply(null));
+  return askManagerOffline(fName, sheetName, boxSel).then(pick => apply(pick.name));
+}
+
+$('#offPrevBtn').addEventListener('click', async () => {
+  const f = $('#offPrevFile').files[0];
+  if (!f) return toast('فایل ثبت‌شده‌ها را انتخاب کنید', 'err');
+  const btn = $('#offPrevBtn');
+  btn.disabled = true; btn.textContent = 'در حال پردازش...';
+  $('#offPrevResult').innerHTML = '';
+  try {
+    if (!state.subs.size && !confirm('⚠️ لیست شرکت گاز هنوز در نسخه آفلاین وارد نشده است.\nبدون آن، چکِ «ناموجود در لیست» برای ثبت‌شده‌ها انجام نمی‌شود.\nادامه می‌دهید؟')) return;
+    const buf = await f.arrayBuffer();
+    const sheets = S.parseWorkbookSheets(buf, XLSX);
+    if (!sheets.length) throw new Error('فایل خالی است یا شیتی با داده ندارد');
+    const dateISO = $('#offPrevDate').value || todayISO();
+    const notes = []; const sum = { ok: 0, dup: 0, nf: 0 };
+    for (const sh of sheets) {
+      if (!sh.subCol) continue;
+      const r = await addPrevSheet(sh.headers, sh.rows, sh.subCol, sh.sheetName, f.name, dateISO, '#offPrevResult');
+      notes.push(esc(r.note));
+      sum.ok += r.ok; sum.dup += r.dup; sum.nf += r.nf;
+      $('#offPrevResult').innerHTML = '';
+    }
+    if (!sum.ok && !sum.dup && !sum.nf) throw new Error('هیچ شماره اشتراک معتبری یافت نشد');
+    await saveState();
+    $('#offPrevResult').innerHTML = `<div class="flex" style="flex-wrap:wrap;gap:6px">
+      <span class="badge green">${faNum(sum.ok)} به ثبت‌شده‌ها اضافه شد ✅</span>
+      ${sum.dup ? `<span class="badge amber">${faNum(sum.dup)} از قبل موجود بود</span>` : ''}
+      ${sum.nf ? `<span class="badge red">${faNum(sum.nf)} ناموجود در لیست / بدون مدیر رد شد</span>` : ''}
+      <span class="badge blue">کل ثبت‌شده‌های آفلاین: ${faNum(state.records.size)}</span>
+    </div>
+    <div class="muted mt" style="font-size:12.5px;line-height:2">${notes.join('<br>')}</div>`;
+    toast('ثبت‌شده‌ها به نسخه آفلاین اضافه شد ✅', 'ok');
+  } catch (e) {
+    if (e.message === '__cancelled__') { await saveState(); toast('انصراف زده شد — شیت‌های قبلی (در صورت وجود) ذخیره شدند', ''); }
+    else toast('خطا: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'افزودن ثبت‌شده‌ها';
+  }
+});
+
+/* ============================================================
+ * کارت ۳ — فایل روزانه
+ * ============================================================ */
+function processDailyRows(headers, rows, subCol, visitDate, manualMgrName = '') {
+  const mgrCol = detectManagerCol(headers, subCol);
+  const norm = rows.map(r => ({ no: S.normalizeSubNo(r[subCol]), data: r })).filter(r => r.no);
+  const nfItems = [], dupItems = [], okItems = [], noMgrItems = [];
+  for (const r of norm) {
+    if (state.subs.size && !state.subs.has(r.no)) { nfItems.push({ no: r.no }); continue; }
+    if (state.records.has(r.no)) {
+      const p = state.records.get(r.no);
+      dupItems.push({ no: r.no, prev_manager: p.mgr, prev_inspector: p.insp, prev_date: p.dISO });
+      continue;
+    }
+    const rawMgr = mgrCol ? String((r.data || {})[mgrCol] ?? '').trim() : manualMgrName;
+    if (!normalizeName(rawMgr)) { noMgrItems.push({ no: r.no }); continue; }
+    const insp = extractInspector(r.data);
+    state.records.set(r.no, { mgr: rawMgr, insp, dISO: visitDate });
+    state.pending.push({ no: r.no, mgr: rawMgr, insp, dISO: visitDate });
+    addMgrName(rawMgr);
+    okItems.push({ no: r.no, mgr: rawMgr, insp });
+  }
+  return { mgrCol, total: norm.length, ok: okItems, dupItems, nfItems, noMgrItems, norm };
+}
+
+function buildOfflineReportRows(res, visitDate, manualMgrName = '') {
+  const dataKeys = [];
+  res.norm.forEach(r => Object.keys(r.data || {}).forEach(k => { if (!dataKeys.includes(k) && dataKeys.length < 20) dataKeys.push(k); }));
+  const okSet = new Set(res.ok.map(x => x.no));
+  return res.norm.map(r => {
+    const dup = res.dupItems.find(d => d.no === r.no);
+    const isNf = res.nfItems.some(x => x.no === r.no) && !okSet.has(r.no) && !dup;
+    const noMgr = res.noMgrItems.some(x => x.no === r.no) && !okSet.has(r.no) && !dup;
+    const o = {
+      'شماره اشتراک': r.no,
+      'نتیجه بررسی': noMgr ? 'بدون مدیر پروژه — ثبت نشد ⚠️'
+        : isNf ? 'ناموجود در لیست شرکت گاز ❌'
+        : dup ? 'تکراری — قبلاً ثبت شده 🔁' : 'ثبت شد ✅',
+      'مدیر پروژه (ثبت اول)': dup ? (dup.prev_manager || '') : (okSet.has(r.no) ? String((r.data || {})[res.mgrCol] ?? manualMgrName).trim() : ''),
+      'ممیز (ثبت اول)': dup ? (dup.prev_inspector || '') : (okSet.has(r.no) ? extractInspector(r.data) : ''),
+      'تاریخ ثبت اول': dup ? faDateNum(dup.prev_date) : (okSet.has(r.no) ? faDateNum(visitDate) : ''),
+    };
+    for (const k of dataKeys) o['اطلاعات فایل | ' + k] = (r.data || {})[k] ?? '';
+    return o;
+  });
+}
+function pendingToRows(items) {
+  return items.map(p => ({
+    'شماره اشتراک': p.no,
+    'مدیر پروژه': p.mgr,
+    'ممیز': p.insp || '',
+    'تاریخ ثبت (شمسی)': faDateNum(p.dISO),
+  }));
+}
+function downloadXlsx(rows, filename, sheetName) {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'اطلاع': 'داده‌ای وجود ندارد' }]);
+  if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] };
+  XLSX.utils.book_append_sheet(wb, ws, (sheetName || 'data').slice(0, 31));
+  XLSX.writeFile(wb, filename);
+}
+
+$('#offDailyBtn').addEventListener('click', async () => {
+  const f = $('#offDailyFile').files[0];
+  if (!f) return toast('فایل روزانه را انتخاب کنید', 'err');
+  const btn = $('#offDailyBtn');
+  btn.disabled = true; btn.textContent = 'در حال بررسی...';
+  $('#offDailyResult').innerHTML = '';
+  try {
+    const visitDate = $('#offDate').value || todayISO();
+    // اگر لیست شرکت گاز خالی است، چکِ ناموجود ممکن نیست — هشدار بده
+    if (!state.subs.size && !confirm('⚠️ لیست شرکت گاز هنوز در نسخه آفلاین وارد نشده است.\nبدون آن، چکِ «ناموجود در لیست» انجام نمی‌شود و همه شماره‌ها فقط چک تکراری می‌شوند.\nادامه می‌دهید؟')) return;
+    const buf = await f.arrayBuffer();
+    const { rows, subCol, headers } = S.parseWorkbook(buf, XLSX);
+    if (!subCol) throw new Error('ستون شماره اشتراک در فایل پیدا نشد');
+    let manualMgr = '';
+    if (!detectManagerCol(headers, subCol)) {
+      const pick = await askManagerOffline(f.name, '', '#offDailyResult');
+      manualMgr = pick.name;
+      $('#offDailyResult').innerHTML = '';
+    }
+    const res = processDailyRows(headers, rows, subCol, visitDate, manualMgr);
+    if (!res.total) throw new Error('هیچ شماره اشتراک معتبری در فایل یافت نشد');
+    await saveState();
+
+    const errs = [
+      ...res.dupItems.map(d => ({ ...d, kind: 'duplicate' })),
+      ...res.nfItems.map(d => ({ ...d, kind: 'not_found' })),
+      ...res.noMgrItems.map(d => ({ ...d, kind: 'no_manager' })),
+    ];
+    const kindBadge = k => k === 'duplicate'
+      ? '<span class="badge amber">تکراری 🔁</span>'
+      : k === 'not_found' ? '<span class="badge red">ناموجود ❌</span>' : '<span class="badge gray">مدیر نامشخص ⚠️</span>';
+    $('#offDailyResult').innerHTML = `
+      <div class="flex mb" style="flex-wrap:wrap;gap:6px">
+        <span class="badge blue">${faNum(res.total)} شماره بررسی شد</span>
+        <span class="badge green">${faNum(res.ok.length)} ثبت جدید ✅ (ذخیره آفلاین)</span>
+        ${res.dupItems.length ? `<span class="badge amber">${faNum(res.dupItems.length)} تکراری 🔁</span>` : ''}
+        ${res.nfItems.length ? `<span class="badge red">${faNum(res.nfItems.length)} ناموجود ❌</span>` : ''}
+        ${res.noMgrItems.length ? `<span class="badge gray">${faNum(res.noMgrItems.length)} بدون مدیر ⚠️</span>` : ''}
+      </div>
+      <div class="muted mb" style="font-size:12.5px">${res.mgrCol ? `ستون مدیر: «${esc(res.mgrCol)}»` : `ستون «مدیر پروژه» در فایل نبود — همه «${esc(manualMgr)}» ثبت شدند`}</div>
+      ${errs.length ? `
+      <div class="note-box mb" style="border-color:rgba(248,113,113,.4)">⚠️ موارد زیر ثبت نشدند:</div>
+      <div class="table-wrap mb" style="max-height:280px;overflow-y:auto"><table>
+        <thead><tr><th>شماره اشتراک</th><th>نوع خطا</th><th>مدیر (ثبت اول)</th><th>ممیز (ثبت اول)</th><th>تاریخ ثبت اول</th></tr></thead>
+        <tbody>${errs.slice(0, 100).map(e2 => `<tr>
+          <td class="ltr">${esc(e2.no)}</td>
+          <td>${kindBadge(e2.kind)}</td>
+          <td>${e2.kind === 'duplicate' ? esc(e2.prev_manager || '—') : '—'}</td>
+          <td>${e2.kind === 'duplicate' ? '<b>' + esc(e2.prev_inspector || '—') + '</b>' : '—'}</td>
+          <td>${e2.kind === 'duplicate' ? faDate(e2.prev_date) : '—'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>` : ''}
+      <div class="flex" style="flex-wrap:wrap;gap:8px">
+        <button class="btn ghost sm" id="offDlReportBtn">⬇ دانلود گزارش این فایل (اکسل)</button>
+        ${res.ok.length ? `<button class="btn ghost sm" id="offDlNewBtn">⬇ ثبت‌های جدید این فایل (برای انتقال به سایت اصلی)</button>` : ''}
+      </div>`;
+    $('#offDlReportBtn').onclick = () => downloadXlsx(
+      buildOfflineReportRows(res, visitDate, manualMgr),
+      `گزارش-آفلاین-${f.name.replace(/\.[^.]+$/, '')}.xlsx`, 'گزارش بررسی');
+    if ($('#offDlNewBtn')) $('#offDlNewBtn').onclick = () => downloadXlsx(
+      pendingToRows(res.ok.map(x => ({ no: x.no, mgr: x.mgr, insp: x.insp, dISO: visitDate }))),
+      `آفلاین-ثبت‌های-جدید-${faDateNum(visitDate)}.xlsx`, 'ثبت‌های جدید');
+    toast(errs.length ? 'پردازش شد — خطاها را بررسی کنید' : 'همه شماره‌ها سالم ثبت شدند ✅', errs.length ? '' : 'ok');
+  } catch (e) {
+    if (e.message !== '__cancelled__') toast('خطا: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'بررسی خودکار';
+  }
+});
+
+/* ============================================================
+ * کارت ۴ — خروجی انتقال + پاک‌کردن
+ * ============================================================ */
+$('#offExportPendingBtn').addEventListener('click', () => {
+  if (!state.pending.length) return toast('هنوز ثبت جدید آفلاینی وجود ندارد', 'err');
+  downloadXlsx(pendingToRows(state.pending), `آفلاین-ثبت‌های-جدید-${faDateNum(todayISO())}.xlsx`, 'ثبت‌های جدید');
+  toast(`${faNum(state.pending.length)} رکورد خروجی گرفته شد — فایل را در سایت اصلی (کارت ۲) آپلود کنید`, 'ok');
+});
+$('#offClearPendingBtn').addEventListener('click', async () => {
+  if (!state.pending.length) return toast('لیست انتقال خالی است', '');
+  if (!confirm(`لیست انتقال (${state.pending.length} مورد) پاک شود؟\nفقط بعد از آپلود موفق در سایت اصلی این کار را بکنید — خود ثبت‌شده‌ها در همین نسخه می‌مانند.`)) return;
+  state.pending = [];
+  await saveState();
+  toast('لیست انتقال پاک شد', 'ok');
+});
+
+/* پاک‌کردن کامل داده‌های آفلاین */
+$('#offResetBtn').addEventListener('click', async () => {
+  if (!confirm('تمام داده‌های آفلاین (لیست شرکت گاز + ثبت‌شده‌ها + لیست انتقال) پاک شود؟')) return;
+  if (!confirm('مطمئن هستید؟ اگر پشتیبان ندارید، قابل بازگشت نیست.')) return;
+  try {
+    state.subs = new Set(); state.records = new Map(); state.pending = []; state.mgrs = [];
+    if (!NO_IDB) {
+      const keys = await idbKeys();
+      for (const k of keys) await idbDel(k);
+    }
+    renderStats();
+    toast('داده‌های آفلاین پاک شد', 'ok');
+  } catch (e) { toast('خطا: ' + e.message, 'err'); }
+});
+
+/* تاریخ شمسی زیر ورودی‌های تاریخ + نام فایل‌ها */
+function refreshJalaliHints() {
+  document.querySelectorAll('.jalali-hint').forEach(h => {
+    const inp = $('#' + h.dataset.for);
+    if (!inp) return;
+    h.textContent = inp.value ? '🗓️ معادل شمسی: ' + faDate(inp.value) : '';
+  });
+}
+document.querySelectorAll('input[type=date]').forEach(i => i.addEventListener('change', refreshJalaliHints));
+function bindName(inputId, nameId) {
+  const inp = $(inputId);
+  inp.addEventListener('change', () => { $(nameId).textContent = inp.files[0] ? inp.files[0].name : ''; });
+}
+bindName('#offMasterFile', '#offMasterFileName');
+bindName('#offPrevFile', '#offPrevFileName');
+bindName('#offDailyFile', '#offDailyFileName');
+$('#offDate').value = todayISO();
+$('#offPrevDate').value = todayISO();
+refreshJalaliHints();
+
+/* تست: window.__off */
+window.__off = { state, addMasterRows, addPrevSheet, processDailyRows, buildOfflineReportRows, pendingToRows, saveState, loadState, detectManagerCol, extractInspector };
+
+/* شروع: بازیابی داده‌های ذخیره‌شده */
+loadState();
+</script>
+</body>
+</html>
