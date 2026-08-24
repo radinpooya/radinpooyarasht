@@ -110,28 +110,39 @@ declare
 begin
   select e.v into v
   from jsonb_each_text(coalesce(p_data, '{}'::jsonb)) as e(k, v)
-  where e.k ~* '(بازدید|ممیز|بازرس|ناظر|inspector)'
+  where e.k ~* '(بازدید|ممیز|بازرس|ناظر|تنظیم کنند|تنظیم‌کنند|ثبت کنند|ثبت‌کنند|تهیه کنند|تهیه‌کنند|inspector)'
   limit 1;
   return v;
 end $$;
 
--- فایل روزانه: وجود در لیست گاز؟ → تکراری در ثبت‌شده‌ها؟ → ثبت جدید
+-- فایل روزانه — روند ۴ مرحله‌ای (نسخه ۵):
+--   ۱) تکراریِ داخل خود فایل؟ → نمایش (ifd)
+--   ۲) در لیست شرکت گاز نیست؟ → نمایش (nf) + ثبت وضعیت not_found برای دسترسی همیشگی
+--   ۳) قبلاً ثبت شده (status=new)؟ → نمایش تکراری با مشخصات ثبت اول (dup)
+--   ۴) سالم → ثبت (new)
+-- هیچ داده‌ای حذف نمی‌شود؛ همه موارد در details و records باقی می‌مانند.
 create or replace function public.process_upload(
   p_filename text,
   p_manager_id bigint,
   p_visit_date date,
   p_rows jsonb,             -- آرایه‌ای از {"no": "...", "data": {...}}
-  p_uploaded_by text default null
+  p_uploaded_by text default null,
+  p_nm_items jsonb default '[]'::jsonb   -- ردیف‌های بدون مدیر (از سمت مرورگر)
 ) returns json
 language plpgsql security definer set search_path = public as $$
 declare
   v_upload_id bigint;
   v_total integer := 0;
   v_new integer := 0;
+  v_dup integer := 0;
+  v_nf integer := 0;
+  v_ifd integer := 0;
   v_dup_items jsonb := '[]'::jsonb;
   v_nf_items jsonb := '[]'::jsonb;
+  v_ifd_items jsonb := '[]'::jsonb;
   v_row jsonb; v_no text; v_first bigint; v_mid bigint;
   v_pm text; v_pd date; v_pdata jsonb;
+  v_seen text[] := '{}';
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
 
@@ -143,18 +154,33 @@ begin
     v_no := upper(btrim(coalesce(v_row->>'no', '')));
     if v_no = '' then continue; end if;
     v_total := v_total + 1;
-    -- مدیر پروژه این ردیف (از ستون فایل) — در غیر این صورت پارامتر کلی
     v_mid := coalesce(nullif(v_row->>'mid', '')::bigint, p_manager_id);
 
-    -- ۱) آیا در لیست شرکت گاز هست؟ نه → خطا (ثبت نمی‌شود)
-    if not exists (select 1 from subs where sub_no = v_no) then
-      v_nf_items := v_nf_items || jsonb_build_object(
+    -- مرحله ۱: تکراری داخل خود فایل روزانه (بار دوم به بعد)
+    if v_no = any(v_seen) then
+      v_ifd := v_ifd + 1;
+      v_ifd_items := v_ifd_items || jsonb_build_object(
         'no', v_no, 'data', coalesce(v_row->'data', '{}'::jsonb));
       continue;
     end if;
+    v_seen := v_seen || v_no;
 
-    -- ۲) آیا قبلاً ثبت شده؟ بله → خطا با مشخصات ثبت اول (مدیر + ممیز)
-    select id into v_first from records where sub_no = v_no order by id limit 1;
+    -- مرحله ۲: موجود در لیست شرکت گاز؟ نه → نمایش + ثبت وضعیت not_found (یک‌بار برای هر شماره)
+    if not exists (select 1 from subs where sub_no = v_no) then
+      v_nf := v_nf + 1;
+      v_nf_items := v_nf_items || jsonb_build_object(
+        'no', v_no, 'data', coalesce(v_row->'data', '{}'::jsonb));
+      if not exists (select 1 from records where sub_no = v_no and status = 'not_found') then
+        insert into records (sub_no, manager_id, upload_id, status, data, visit_date)
+        values (v_no, null, v_upload_id, 'not_found',
+                coalesce(v_row->'data', '{}'::jsonb), p_visit_date);
+      end if;
+      continue;
+    end if;
+
+    -- مرحله ۳: قبلاً «ثبت‌شده» (new)؟ بله → تکراری با مشخصات ثبت اول
+    select id into v_first from records
+    where sub_no = v_no and status = 'new' order by id limit 1;
     if v_first is not null then
       select m.name, pr.visit_date, pr.data into v_pm, v_pd, v_pdata
       from records pr left join managers m on m.id = pr.manager_id
@@ -167,7 +193,7 @@ begin
       continue;
     end if;
 
-    -- ۳) معتبر و جدید → ثبت می‌شود
+    -- مرحله ۴: معتبر و جدید → ثبت می‌شود
     v_new := v_new + 1;
     insert into records (sub_no, manager_id, upload_id, status, data, visit_date)
     values (v_no, v_mid, v_upload_id, 'new',
@@ -179,7 +205,8 @@ begin
     new_count = v_new,
     dup_count = jsonb_array_length(v_dup_items),
     notfound_count = jsonb_array_length(v_nf_items),
-    details = jsonb_build_object('dupItems', v_dup_items, 'nfItems', v_nf_items)
+    details = jsonb_build_object('dupItems', v_dup_items, 'nfItems', v_nf_items,
+                                 'ifdItems', v_ifd_items, 'nmItems', p_nm_items)
   where id = v_upload_id;
 
   return json_build_object(
@@ -187,7 +214,8 @@ begin
     'total', v_total, 'new', v_new,
     'dup', jsonb_array_length(v_dup_items),
     'nf', jsonb_array_length(v_nf_items),
-    'dupItems', v_dup_items, 'nfItems', v_nf_items);
+    'ifd', jsonb_array_length(v_ifd_items),
+    'dupItems', v_dup_items, 'nfItems', v_nf_items, 'ifdItems', v_ifd_items);
 end $$;
 
 -- ایمپورت «فایل دوم» (اشتراک‌های ثبت‌شده قبلی) — فقط شماره‌های معتبر و جدید
@@ -203,6 +231,9 @@ declare
   v_upload_id bigint;
   v_total integer := 0; v_added integer := 0; v_dup integer := 0; v_nf integer := 0;
   v_row jsonb; v_no text; v_mid bigint;
+  v_dup_items jsonb := '[]'::jsonb;
+  v_nf_items jsonb := '[]'::jsonb;
+  v_first bigint; v_pm text; v_pd date; v_pdata jsonb;
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
 
@@ -217,10 +248,24 @@ begin
     v_mid := coalesce(nullif(v_row->>'mid', '')::bigint, p_manager_id);
 
     if exists (select 1 from records where sub_no = v_no) then
-      v_dup := v_dup + 1; continue;                       -- از قبل در سیستم هست
+      v_dup := v_dup + 1;
+      -- جزئیات ثبت اول برای گزارش
+      select pr2.visit_date, mm2.name, pr2.data
+        into v_pd, v_pm, v_pdata
+      from (select min(id) as id from records where sub_no = v_no) t
+      join records pr2 on pr2.id = t.id
+      left join managers mm2 on mm2.id = pr2.manager_id;
+      v_dup_items := v_dup_items || jsonb_build_object(
+        'no', v_no, 'data', coalesce(v_row->'data', '{}'::jsonb),
+        'prev_date', v_pd, 'prev_manager', v_pm,
+        'prev_inspector', public.extract_inspector(v_pdata));
+      continue;
     end if;
     if not exists (select 1 from subs where sub_no = v_no) then
-      v_nf := v_nf + 1; continue;                         -- در لیست شرکت گاز نیست → رد
+      v_nf := v_nf + 1;
+      v_nf_items := v_nf_items || jsonb_build_object(
+        'no', v_no, 'data', coalesce(v_row->'data', '{}'::jsonb));
+      continue;
     end if;
     insert into records (sub_no, manager_id, upload_id, status, data, visit_date)
     values (v_no, v_mid, v_upload_id, 'new',
@@ -228,7 +273,8 @@ begin
     v_added := v_added + 1;
   end loop;
 
-  update uploads set total = v_total, new_count = v_added, dup_count = v_dup, notfound_count = v_nf
+  update uploads set total = v_total, new_count = v_added, dup_count = v_dup, notfound_count = v_nf,
+    details = jsonb_build_object('dupItems', v_dup_items, 'nfItems', v_nf_items)
   where id = v_upload_id;
 
   return json_build_object('uploadId', v_upload_id, 'total', v_total,
@@ -250,11 +296,11 @@ begin
     'from', v_from,
     'to', v_to,
     'masterCount', (select count(*) from subs),
-    'registeredUnique', (select count(distinct sub_no) from records),
+    'registeredUnique', (select count(distinct sub_no) from records where status = 'new'),
     'validUnique', (select count(distinct r.sub_no) from records r
                      where exists (select 1 from subs s where s.sub_no = r.sub_no)),
     'totalRows', (select count(*) from records),
-    'todayRows', (select count(*) from records where visit_date = current_date),
+    'todayRows', (select count(*) from records where visit_date = current_date and status = 'new'),
     'dupRows', coalesce((select sum(dup_count) from uploads), 0),
     'nfRows', coalesce((select sum(notfound_count) from uploads), 0),
     'bar', coalesce((select json_agg(x) from (
@@ -343,7 +389,7 @@ end $$;
 
 -- ---------- دسترسی‌ها ----------
 revoke all on function public.extract_inspector(jsonb) from public, anon;
-revoke all on function public.process_upload(text, bigint, date, jsonb, text) from public, anon;
+revoke all on function public.process_upload(text, bigint, date, jsonb, text, jsonb) from public, anon;
 revoke all on function public.import_registered(text, bigint, date, jsonb, text) from public, anon;
 revoke all on function public.dashboard_stats(date, date) from public, anon;
 revoke all on function public.recompute_statuses() from public, anon;
@@ -352,7 +398,7 @@ revoke all on function public.reset_all() from public, anon;
 revoke all on function public.delete_all_uploads() from public, anon;
 
 grant execute on function public.extract_inspector(jsonb) to authenticated;
-grant execute on function public.process_upload(text, bigint, date, jsonb, text) to authenticated;
+grant execute on function public.process_upload(text, bigint, date, jsonb, text, jsonb) to authenticated;
 grant execute on function public.import_registered(text, bigint, date, jsonb, text) to authenticated;
 grant execute on function public.dashboard_stats(date, date) to authenticated;
 grant execute on function public.recompute_statuses() to authenticated;
