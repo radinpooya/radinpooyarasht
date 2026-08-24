@@ -335,7 +335,7 @@ async function runCheck(rawNumbers) {
       master_data: subMap[no] || null,
       registered: recs.length > 0,
       times: recs.length,
-      first: recs[0] || null,
+      first: recs.find(x => x.status === 'new') || recs[0] || null,
     };
   });
 }
@@ -355,6 +355,7 @@ function renderSingle(r, box) {
   let icon, title, cls;
   if (r.in_master && r.registered) { icon = '🔁'; title = 'این اشتراک قبلاً ثبت شده است'; cls = 'amber'; }
   else if (r.in_master) { icon = '✅'; title = 'در لیست شرکت گاز هست و تاکنون ثبت نشده'; cls = 'green'; }
+  else if (r.registered && r.first && r.first.status === 'not_found') { icon = '🚫'; title = 'قبلاً در فایل روزانه ارسال شده ولی در لیست شرکت گاز نبوده (ناموجود)'; cls = 'red'; }
   else if (r.registered) { icon = '⚠️'; title = 'ثبت شده اما در لیست شرکت گاز نیست!'; cls = 'red'; }
   else { icon = '❌'; title = 'نه در لیست شرکت گاز است، نه تاکنون ثبت شده'; cls = 'red'; }
 
@@ -642,18 +643,12 @@ $('#recordUploadBtn').addEventListener('click', async () => {
       p_visit_date: visitDate,
       p_rows,
       p_uploaded_by: ME.email || null,
+      p_nm_items: extraErrs.map(e => ({ no: e.no, data: e.data })),
     });
     if (error) throw new Error(error.message);
 
-    // موارد «بدون مدیر» را در جزئیات آپلود ذخیره کن تا گزارش تاریخچه کامل باشد
-    if (extraErrs.length && r.uploadId) {
-      const nmItems = extraErrs.map(e => ({ no: e.no, data: e.data }));
-      await sb.from('uploads').update({
-        details: { dupItems: r.dupItems || [], nfItems: r.nfItems || [], nmItems }
-      }).eq('id', r.uploadId);
-    }
-
     const errs = [
+      ...(r.ifdItems || []).map(d => ({ ...d, kind: 'in_file' })),
       ...(r.dupItems || []).map(d => ({ ...d, kind: 'duplicate' })),
       ...(r.nfItems || []).map(d => ({ ...d, kind: 'not_found' })),
       ...extraErrs,
@@ -662,18 +657,21 @@ $('#recordUploadBtn').addEventListener('click', async () => {
     const mgrColNote = mgrCol
       ? `ستون‌های شناسایی‌شده: اشتراک «${esc(subCol)}» — مدیر پروژه «${esc(mgrCol)}»`
       : `ستون «مدیر پروژه» در فایل نبود${pickedMgrName ? ` — مدیر: «${esc(pickedMgrName)}» (انتخاب دستی)` : ''}`;
-    const kindBadge = k => k === 'duplicate'
-      ? '<span class="badge amber">تکراری 🔁</span>'
-      : k === 'not_found'
-        ? '<span class="badge red">ناموجود در لیست ❌</span>'
-        : '<span class="badge gray">مدیر نامشخص ⚠️</span>';
+    const kindBadge = k => k === 'in_file'
+      ? '<span class="badge amber">تکراری داخل فایل 🔄</span>'
+      : k === 'duplicate'
+        ? '<span class="badge amber">تکراری با ثبت قبلی 🔁</span>'
+        : k === 'not_found'
+          ? '<span class="badge red">ناموجود در لیست ❌</span>'
+          : '<span class="badge gray">مدیر نامشخص ⚠️</span>';
 
     $('#recordResult').innerHTML = `
       <div class="flex mb">
         <span class="badge blue">${faNum(r.total + extraErrs.length)} شماره بررسی شد</span>
         <span class="badge green">${faNum(r.new)} ثبت جدید ✅</span>
-        ${r.dup ? `<span class="badge amber">${faNum(r.dup)} خطای تکراری 🔁</span>` : ''}
-        ${r.nf ? `<span class="badge red">${faNum(r.nf)} خطای ناموجود ❌</span>` : ''}
+        ${r.ifd ? `<span class="badge amber">${faNum(r.ifd)} تکراری داخل خود فایل 🔄</span>` : ''}
+        ${r.dup ? `<span class="badge amber">${faNum(r.dup)} تکراری با ثبت‌ قبلی 🔁</span>` : ''}
+        ${r.nf ? `<span class="badge red">${faNum(r.nf)} ناموجود در لیست گاز ❌</span>` : ''}
         ${extraErrs.length ? `<span class="badge gray">${faNum(extraErrs.length)} بدون مدیر ⚠️</span>` : ''}
       </div>
       <div class="muted mb" style="font-size:12.5px">${mgrColNote}${INSPECTOR_RE.test(headers.find(h => INSPECTOR_RE.test(h)) || '') ? ' — ممیز «' + esc(headers.find(h => INSPECTOR_RE.test(h))) + '»' : ''}</div>
@@ -694,7 +692,8 @@ $('#recordUploadBtn').addEventListener('click', async () => {
         <select class="input" id="dailyReportFilter" style="padding:6px 10px;font-size:12.5px;width:auto">
           <option value="all">همه موارد</option>
           <option value="ok">فقط ثبت‌شده‌ها ✅</option>
-          <option value="dup">فقط تکراری‌ها 🔁</option>
+          <option value="ifd">فقط تکراری‌های داخل خود فایل 🔄</option>
+          <option value="dup">فقط تکراری با ثبت قبلی 🔁</option>
           <option value="nf">فقط ناموجودها ❌</option>
           <option value="no_manager">فقط بدون مدیر ⚠️</option>
         </select>
@@ -707,6 +706,7 @@ $('#recordUploadBtn').addEventListener('click', async () => {
       window.__lastReportCounts = {
         ok: r.new || 0,
         dup: (r.dupItems || []).length,
+        ifd: (r.ifdItems || []).length,
         nf: (r.nfItems || []).length,
         no_manager: extraErrs.length,
       };
@@ -849,28 +849,30 @@ function buildDailyReportRows(norm, result, mgrCol, visitDate, extraErrs = [], m
   const dupMap = {};
   (result.dupItems || []).forEach(d => dupMap[d.no] = d);
   const nfSet = new Set((result.nfItems || []).map(x => x.no));
+  const ifdSet = new Set((result.ifdItems || []).map(x => x.no));
   const noMgrSet = new Set(extraErrs.map(x => x.no));
   const dataKeys = [];
   norm.forEach(r => Object.keys(r.data || {}).forEach(k => {
     if (!dataKeys.includes(k) && dataKeys.length < 20) dataKeys.push(k);
   }));
-  const seenOk = new Set();
+  const occ = {};
   return norm.map(r => {
-    const rawMgr = mgrCol ? String((r.data || {})[mgrCol] ?? '').trim() : manualMgrName;
-    const noMgr = noMgrSet.has(r.no) || !normalizeName(rawMgr);
-    const isNf = !noMgr && nfSet.has(r.no);
-    let dup = (!noMgr && !isNf) ? (dupMap[r.no] || null) : null;
-    // اگر همین فایل دوبار شامل شماره بود، اولین occurrence «ثبت شد» است
-    if (dup && dup.prev_date === visitDate && normalizeName(dup.prev_manager) === normalizeName(rawMgr) && !seenOk.has(r.no)) dup = null;
-    if (!noMgr && !isNf && !dup) seenOk.add(r.no);
+    occ[r.no] = (occ[r.no] || 0) + 1;
+    // بار دوم به بعدِ یک شماره داخل همین فایل → «تکراری داخل خود فایل» (همان مرحله ۱ سرور)
+    const isRepeat = occ[r.no] > 1 && ifdSet.has(r.no);
+    const noMgr = noMgrSet.has(r.no);
+    const isNf = nfSet.has(r.no);
+    const dup = (!isRepeat && !noMgr && !isNf) ? (dupMap[r.no] || null) : null;
+    const isOk = !isRepeat && !noMgr && !isNf && !dup;
     const o = {
       'شماره اشتراک': r.no,
-      'نتیجه بررسی': noMgr ? 'بدون مدیر پروژه — ثبت نشد ⚠️'
+      'نتیجه بررسی': isRepeat ? 'تکراری داخل خود فایل 🔄'
+        : noMgr ? 'بدون مدیر پروژه — ثبت نشد ⚠️'
         : isNf ? 'ناموجود در لیست شرکت گاز ❌'
         : dup ? 'تکراری — قبلاً ثبت شده 🔁' : 'ثبت شد ✅',
-      'مدیر پروژه (ثبت اول)': dup ? (dup.prev_manager || '') : (noMgr || isNf ? '' : rawMgr),
-      'ممیز (ثبت اول)': dup ? (dup.prev_inspector || '') : '',
-      'تاریخ ثبت اول': dup ? faDateNum(dup.prev_date) : (noMgr || isNf ? '' : faDateNum(visitDate)),
+      'مدیر پروژه (ثبت اول)': dup ? (dup.prev_manager || '') : (isOk ? String((r.data || {})[mgrCol] ?? manualMgrName).trim() : ''),
+      'ممیز (ثبت اول)': dup ? (dup.prev_inspector || '') : (isOk ? extractInspector(r.data) : ''),
+      'تاریخ ثبت اول': dup ? faDateNum(dup.prev_date) : (isOk ? faDateNum(visitDate) : ''),
     };
     for (const k of dataKeys) o['اطلاعات فایل | ' + k] = (r.data || {})[k] ?? '';
     return o;
@@ -878,9 +880,10 @@ function buildDailyReportRows(norm, result, mgrCol, visitDate, extraErrs = [], m
 }
 
 function buildHistoryReportRows(recs, details, mgrName) {
+  const nosInRecs = new Set(recs.map(x => x.sub_no));
   const rows = recs.map(x => ({
     'شماره اشتراک': x.sub_no,
-    'نتیجه بررسی': 'ثبت شد ✅',
+    'نتیجه بررسی': x.status === 'not_found' ? 'ناموجود در لیست شرکت گاز ❌' : 'ثبت شد ✅',
     'مدیر پروژه (ثبت اول)': x.manager_name || mgrName || '',
     'ممیز (ثبت اول)': extractInspector(x.data),
     'تاریخ ثبت اول': faDateNum(x.visit_date),
@@ -892,9 +895,20 @@ function buildHistoryReportRows(recs, details, mgrName) {
     'ممیز (ثبت اول)': it.prev_inspector || '',
     'تاریخ ثبت اول': faDateNum(it.prev_date),
   }));
-  (details.nfItems || []).forEach(it => rows.push({
+  // ناموجودها: برای آپلودهای جدید از records می‌آیند؛ برای قدیمی‌ها از details
+  (details.nfItems || []).filter(it => !nosInRecs.has(it.no)).forEach(it => rows.push({
     'شماره اشتراک': it.no,
     'نتیجه بررسی': 'ناموجود در لیست شرکت گاز ❌',
+    'مدیر پروژه (ثبت اول)': '', 'ممیز (ثبت اول)': '', 'تاریخ ثبت اول': '',
+  }));
+  (details.ifdItems || []).forEach(it => rows.push({
+    'شماره اشتراک': it.no,
+    'نتیجه بررسی': 'تکراری داخل خود فایل 🔄',
+    'مدیر پروژه (ثبت اول)': '', 'ممیز (ثبت اول)': '', 'تاریخ ثبت اول': '',
+  }));
+  (details.nmItems || []).forEach(it => rows.push({
+    'شماره اشتراک': it.no,
+    'نتیجه بررسی': 'بدون مدیر پروژه — ثبت نشد ⚠️',
     'مدیر پروژه (ثبت اول)': '', 'ممیز (ثبت اول)': '', 'تاریخ ثبت اول': '',
   }));
   return rows;
@@ -948,13 +962,13 @@ function downloadXlsx(rows, filename, sheetName) {
 }
 
 /* فیلتر ردیف‌های گزارش بر اساس نوع نتیجه (ستون «نتیجه بررسی») */
-const REPORT_KINDS = { ok: 'ثبت شد', dup: 'تکراری', nf: 'ناموجود', no_manager: 'بدون مدیر' };
+const REPORT_KINDS = { ok: 'ثبت شد', dup: 'تکراری — قبلاً', ifd: 'تکراری داخل خود فایل', nf: 'ناموجود', no_manager: 'بدون مدیر' };
 function filterReportRows(rows, kind) {
   if (!kind || kind === 'all') return rows;
   const prefix = REPORT_KINDS[kind];
   return rows.filter(r => String(r['نتیجه بررسی'] || '').startsWith(prefix));
 }
-const REPORT_KIND_SUFFIX = { all: '', ok: '-ثبت‌شده‌ها', dup: '-تکراری‌ها', nf: '-ناموجودها', no_manager: '-بدون‌مدیر' };
+const REPORT_KIND_SUFFIX = { all: '', ok: '-ثبت‌شده‌ها', dup: '-تکراری‌ها', ifd: '-تکراری‌های-داخل-فایل', nf: '-ناموجودها', no_manager: '-بدون‌مدیر' };
 
 async function fetchAllRecordsView(queryFn) {
   const out = [];
@@ -1007,9 +1021,10 @@ function recordsToExcelRows(recs, masterMap) {
 /* شمارش انواع موجود در جزئیات یک آپلود — برای پیام‌های شفاف */
 function reportKindCounts(recs, details) {
   return {
-    ok: recs.length,
+    ok: recs.filter(x => x.status === 'new').length,
     dup: (details.dupItems || []).length,
-    nf: (details.nfItems || []).length,
+    ifd: (details.ifdItems || []).length,
+    nf: (details.nfItems || []).length + recs.filter(x => x.status === 'not_found').length,
     no_manager: (details.nmItems || []).length,
   };
 }
@@ -1017,7 +1032,7 @@ function reportKindCounts(recs, details) {
 function guardedDownloadReport(rows, kind, filename) {
   if (!rows.length) {
     const c = window.__lastReportCounts || {};
-    toast(`❗ در این فایل هیچ «${REPORT_KINDS[kind] || 'موردی'}» ثبت نشده است. موجود در این فایل — ثبت‌شده: ${faNum(c.ok || 0)} | تکراری: ${faNum(c.dup || 0)} | ناموجود: ${faNum(c.nf || 0)} | بدون مدیر: ${faNum(c.no_manager || 0)}. برای دیدن همه، فیلتر را روی «همه موارد» بگذارید.`, 'err');
+    toast(`❗ در این فایل هیچ «${REPORT_KINDS[kind] || 'موردی'}» ثبت نشده است. موجود در این فایل — ثبت‌شده: ${faNum(c.ok || 0)} | تکراری داخل فایل: ${faNum(c.ifd || 0)} | تکراری قبلی: ${faNum(c.dup || 0)} | ناموجود: ${faNum(c.nf || 0)} | بدون مدیر: ${faNum(c.no_manager || 0)}. برای دیدن همه، فیلتر را روی «همه موارد» بگذارید.`, 'err');
     return false;
   }
   downloadXlsx(rows, filename, 'گزارش بررسی');
