@@ -225,6 +225,33 @@ async function loadDashboard() {
 
   renderCharts(d, progress);
   renderMgrTable(d);
+  loadDbUsage();
+}
+
+/* کارت فضای دیتابیس (نیازمند اجرای schema.sql جدید) */
+const fmtMB = bytes => { const mb = Number(bytes || 0) / 1048576; return mb >= 100 ? faNum(Math.round(mb)) : faNum(Math.round(mb * 10) / 10); };
+async function loadDbUsage() {
+  const card = $('#dbUsageCard');
+  if (!card) return;
+  try {
+    const { data: u, error } = await sb.rpc('db_usage');
+    if (error) throw new Error(error.message);
+    renderDbUsage(u);
+  } catch { card.classList.add('hidden'); }
+}
+function renderDbUsage(u) {
+  const card = $('#dbUsageCard');
+  const total = Number(u.total || 0);
+  const quotaMb = Number(u.quota_mb || 500);
+  const pct = Math.min(100, (total / 1048576) * 100 / quotaMb);
+  $('#dbUsageVal').innerHTML = `${fmtMB(total)}<small> از ${faNum(quotaMb)} مگابایت (${faNum(Math.round(pct))}٪)</small>`;
+  const fill = $('#dbUsageFill');
+  fill.style.width = pct + '%';
+  fill.style.background = pct >= 85 ? 'linear-gradient(90deg,#f87171,#ef4444)'
+    : pct >= 60 ? 'linear-gradient(90deg,#fbbf24,#f59e0b)' : '';
+  $('#dbUsageDetail').textContent =
+    `لیست شرکت گاز: ${fmtMB(u.subs)} مگابایت · ثبت‌شده‌ها: ${fmtMB(u.records)} مگابایت · تاریخچه: ${fmtMB(u.uploads)} مگابایت · مدیرها: ${fmtMB(u.managers)} مگابایت — سهمیه پلن رایگان Supabase`;
+  card.classList.remove('hidden');
 }
 
 function dayList(from, to) {
