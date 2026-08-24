@@ -703,9 +703,17 @@ $('#recordUploadBtn').addEventListener('click', async () => {
       </div>`;
     $('#dlReportBtn').onclick = () => {
       const kind = $('#dailyReportFilter').value;
-      downloadXlsx(
+      const r2 = { new: r.new, dupItems: r.dupItems, nfItems: r.nfItems };
+      window.__lastReportCounts = {
+        ok: r.new || 0,
+        dup: (r.dupItems || []).length,
+        nf: (r.nfItems || []).length,
+        no_manager: extraErrs.length,
+      };
+      guardedDownloadReport(
         filterReportRows(buildDailyReportRows(norm, r, mgrCol, visitDate, extraErrs, pickedMgrName || ''), kind),
-        `گزارش-${f.name.replace(/\.[^.]+$/, '')}${REPORT_KIND_SUFFIX[kind] || ''}.xlsx`, 'گزارش بررسی');
+        kind,
+        `گزارش-${f.name.replace(/\.[^.]+$/, '')}${REPORT_KIND_SUFFIX[kind] || ''}.xlsx`);
     };
     toast(errs.length ? 'پردازش شد — خطاها را بررسی کنید' : 'همه شماره‌ها با موفقیت ثبت شدند ✅', errs.length ? '' : 'ok');
     loadUploadsTable();
@@ -898,7 +906,12 @@ async function loadUploadsTable() {
     .select('id,filename,visit_date,total,new_count,dup_count,notfound_count,uploaded_by,details,managers(name)')
     .order('id', { ascending: false }).limit(100);
   if (error) return toast(hintSchema(error), 'err');
-  $('#uploadsTable tbody').innerHTML = rows.length ? rows.map(u => `<tr>
+  $('#uploadsTable tbody').innerHTML = rows.length ? rows.map(u => {
+    // آپلود قدیمی (قبل از آپدیت ۸): شمارنده دارد ولی جزئیات (شماره‌های خطادار) ذخیره نشده
+    const d = u.details || {};
+    const oldMissingDetails = (u.dup_count > 0 || u.notfound_count > 0) &&
+      !(d.dupItems || []).length && !(d.nfItems || []).length && !(d.nmItems || []).length;
+    return `<tr>
     <td>${faNum(u.id)}</td>
     <td class="ltr" style="max-width:180px;overflow:hidden;text-overflow:ellipsis">${esc(u.filename || '—')}</td>
     <td>${u.managers?.name ? esc(u.managers.name) : '<span class="badge gray">متنوع</span>'}</td>
@@ -909,10 +922,11 @@ async function loadUploadsTable() {
     <td style="color:var(--red)">${faNum(u.notfound_count)}</td>
     <td class="ltr">${esc((u.uploaded_by || '—').split('@')[0])}</td>
     <td class="flex">
-      <button class="btn ghost sm" onclick="downloadUploadReport(${u.id})">گزارش</button>
+      <button class="btn ghost sm" onclick="downloadUploadReport(${u.id})" ${oldMissingDetails ? 'title="این آپلود قدیمی است و شماره‌های خطادارش ذخیره نشده — فقط گزارش ثبت‌شده‌ها کامل است"' : ''}>گزارش${oldMissingDetails ? ' ⚠️' : ''}</button>
       <button class="btn danger sm" onclick="deleteUpload(${u.id})">حذف</button>
     </td>
-  </tr>`).join('') : '<tr><td colspan="10"><div class="empty-state"><div class="big">📂</div>هنوز فایلی آپلود نشده است</div></td></tr>';
+  </tr>`;
+  }).join('') : '<tr><td colspan="10"><div class="empty-state"><div class="big">📂</div>هنوز فایلی آپلود نشده است</div></td></tr>';
 }
 
 window.deleteUpload = async id => {
@@ -990,6 +1004,27 @@ function recordsToExcelRows(recs, masterMap) {
   });
 }
 
+/* شمارش انواع موجود در جزئیات یک آپلود — برای پیام‌های شفاف */
+function reportKindCounts(recs, details) {
+  return {
+    ok: recs.length,
+    dup: (details.dupItems || []).length,
+    nf: (details.nfItems || []).length,
+    no_manager: (details.nmItems || []).length,
+  };
+}
+/* دانلود گزارش فقط وقتی ردیفی دارد؛ وگرنه پیام شفاف به‌جای فایل خالی */
+function guardedDownloadReport(rows, kind, filename) {
+  if (!rows.length) {
+    const c = window.__lastReportCounts || {};
+    toast(`❗ در این فایل هیچ «${REPORT_KINDS[kind] || 'موردی'}» ثبت نشده است. موجود در این فایل — ثبت‌شده: ${faNum(c.ok || 0)} | تکراری: ${faNum(c.dup || 0)} | ناموجود: ${faNum(c.nf || 0)} | بدون مدیر: ${faNum(c.no_manager || 0)}. برای دیدن همه، فیلتر را روی «همه موارد» بگذارید.`, 'err');
+    return false;
+  }
+  downloadXlsx(rows, filename, 'گزارش بررسی');
+  toast(`گزارش دانلود شد — ${faNum(rows.length)} ردیف ✅`, 'ok');
+  return true;
+}
+
 window.downloadUploadReport = async uploadId => {
   try {
     toast('در حال آماده‌سازی گزارش...', 'ok');
@@ -998,9 +1033,11 @@ window.downloadUploadReport = async uploadId => {
     if (error) throw new Error(error.message);
     const recs = await fetchAllRecordsView(q => q.eq('upload_id', uploadId));
     const kind = $('#historyReportFilter') ? $('#historyReportFilter').value : 'all';
-    const rows = filterReportRows(buildHistoryReportRows(recs, u.details || {}, u.managers?.name || ''), kind);
-    downloadXlsx(rows,
-      `گزارش-${(u.filename || 'upload-' + uploadId).replace(/\.[^.]+$/, '')}${REPORT_KIND_SUFFIX[kind] || ''}.xlsx`, 'گزارش بررسی');
+    const details = u.details || {};
+    window.__lastReportCounts = reportKindCounts(recs, details);
+    const rows = filterReportRows(buildHistoryReportRows(recs, details, u.managers?.name || ''), kind);
+    guardedDownloadReport(rows, kind,
+      `گزارش-${(u.filename || 'upload-' + uploadId).replace(/\.[^.]+$/, '')}${REPORT_KIND_SUFFIX[kind] || ''}.xlsx`);
   } catch (e) { toast('خطا: ' + e.message, 'err'); }
 };
 
@@ -1150,6 +1187,7 @@ function applyRecFilters(q) {
   if (s) q = q.ilike('sub_no', '%' + s + '%');
   if ($('#recManager').value) q = q.eq('manager_id', Number($('#recManager').value));
   if ($('#recStatus').value) q = q.eq('status', $('#recStatus').value);
+  if ($('#recInMaster') && $('#recInMaster').value) q = q.eq('in_master', $('#recInMaster').value === 'yes');
   if ($('#recFrom').value) q = q.gte('visit_date', $('#recFrom').value);
   if ($('#recTo').value) q = q.lte('visit_date', $('#recTo').value);
   return q;
