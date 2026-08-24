@@ -531,7 +531,7 @@ $('#masterUploadBtn').addEventListener('click', async () => {
 });
 
 /* ================= daily records upload ================= */
-const INSPECTOR_RE = /(بازدید|ممیز|بازرس|ناظر|تنظیم کنند|تنظیم‌کنند|تهیه کننده|inspector)/i;
+const INSPECTOR_RE = /(بازدید|ممیز|بازرس|ناظر|تنظیم کنند|تنظیم‌کنند|ثبت کننده|ثبت‌کننده|تهیه کننده|inspector)/i;
 function extractInspector(data) {
   if (!data) return '';
   for (const [k, v] of Object.entries(data)) {
@@ -619,10 +619,20 @@ $('#recordUploadBtn').addEventListener('click', async () => {
     if (!norm.length) throw new Error('هیچ شماره اشتراک معتبری در فایل یافت نشد');
 
     // تشخیص خودکار ستون مدیر پروژه از داخل فایل
-    const mgrCol = detectManagerCol(headers, subCol);
-    if (!mgrCol) throw new Error('ستون «مدیر پروژه» در فایل پیدا نشد. ستون‌های فایل: «' + headers.join('»، «') + '»');
-
-    const { p_rows, extras: extraErrs } = await rowsWithManagers(norm, mgrCol);
+    let mgrCol = detectManagerCol(headers, subCol);
+    let p_rows, extraErrs, mgrNote = null;
+    if (mgrCol) {
+      ({ p_rows, extras: extraErrs } = await rowsWithManagers(norm, mgrCol));
+    } else {
+      // اگر ستون مدیر پروژه نبود → مثل فایل ثبت‌شده‌های قبلی از کاربر بپرس (یا حدس بزن از نام فایل)
+      const pick = await askManagerForFile(f.name, '', '#recordResult');
+      const resolve = await buildManagerResolver();
+      const mid = await resolve(pick.name);
+      p_rows = norm.map(r => ({ no: r.no, data: r.data, mid }));
+      extraErrs = [];
+      mgrNote = `مدیر پروژه در ستون فایل نبود — همه «${pick.name}» ثبت شدند${pick.auto ? ' (برداشت خودکار)' : ''}`;
+      $('#recordResult').innerHTML = '';
+    }
 
     const visitDate = $('#recordDate').value || todayISO();
     const singleMid = p_rows.length && new Set(p_rows.map(x => x.mid)).size === 1 ? p_rows[0].mid : null;
@@ -635,11 +645,23 @@ $('#recordUploadBtn').addEventListener('click', async () => {
     });
     if (error) throw new Error(error.message);
 
+    // موارد «بدون مدیر» را در جزئیات آپلود ذخیره کن تا گزارش تاریخچه کامل باشد
+    if (extraErrs.length && r.uploadId) {
+      const nmItems = extraErrs.map(e => ({ no: e.no, data: e.data }));
+      await sb.from('uploads').update({
+        details: { dupItems: r.dupItems || [], nfItems: r.nfItems || [], nmItems }
+      }).eq('id', r.uploadId);
+    }
+
     const errs = [
       ...(r.dupItems || []).map(d => ({ ...d, kind: 'duplicate' })),
       ...(r.nfItems || []).map(d => ({ ...d, kind: 'not_found' })),
       ...extraErrs,
     ];
+    const pickedMgrName = p_rows.length ? (MANAGERS.find(m => m.id === p_rows[0].mid) || {}).name : null;
+    const mgrColNote = mgrCol
+      ? `ستون‌های شناسایی‌شده: اشتراک «${esc(subCol)}» — مدیر پروژه «${esc(mgrCol)}»`
+      : `ستون «مدیر پروژه» در فایل نبود${pickedMgrName ? ` — مدیر: «${esc(pickedMgrName)}» (انتخاب دستی)` : ''}`;
     const kindBadge = k => k === 'duplicate'
       ? '<span class="badge amber">تکراری 🔁</span>'
       : k === 'not_found'
@@ -654,7 +676,7 @@ $('#recordUploadBtn').addEventListener('click', async () => {
         ${r.nf ? `<span class="badge red">${faNum(r.nf)} خطای ناموجود ❌</span>` : ''}
         ${extraErrs.length ? `<span class="badge gray">${faNum(extraErrs.length)} بدون مدیر ⚠️</span>` : ''}
       </div>
-      <div class="muted mb" style="font-size:12.5px">ستون‌های شناسایی‌شده: اشتراک «${esc(subCol)}» — مدیر پروژه «${esc(mgrCol)}»${INSPECTOR_RE.test(headers.find(h => INSPECTOR_RE.test(h)) || '') ? ' — ممیز «' + esc(headers.find(h => INSPECTOR_RE.test(h))) + '»' : ''}</div>
+      <div class="muted mb" style="font-size:12.5px">${mgrColNote}${INSPECTOR_RE.test(headers.find(h => INSPECTOR_RE.test(h)) || '') ? ' — ممیز «' + esc(headers.find(h => INSPECTOR_RE.test(h))) + '»' : ''}</div>
       ${errs.length ? `
       <div class="note-box mb" style="border-color:rgba(248,113,113,.4)">⚠️ موارد زیر <b style="color:var(--red)">ثبت نشدند</b> و فقط به‌صورت خطا گزارش می‌شوند:</div>
       <div class="table-wrap mb" style="max-height:280px;overflow-y:auto"><table>
@@ -682,7 +704,7 @@ $('#recordUploadBtn').addEventListener('click', async () => {
     $('#dlReportBtn').onclick = () => {
       const kind = $('#dailyReportFilter').value;
       downloadXlsx(
-        filterReportRows(buildDailyReportRows(norm, r, mgrCol, visitDate, extraErrs), kind),
+        filterReportRows(buildDailyReportRows(norm, r, mgrCol, visitDate, extraErrs, pickedMgrName || ''), kind),
         `گزارش-${f.name.replace(/\.[^.]+$/, '')}${REPORT_KIND_SUFFIX[kind] || ''}.xlsx`, 'گزارش بررسی');
     };
     toast(errs.length ? 'پردازش شد — خطاها را بررسی کنید' : 'همه شماره‌ها با موفقیت ثبت شدند ✅', errs.length ? '' : 'ok');
@@ -711,13 +733,14 @@ function guessManagerFromName(text) {
   return hits.length === 1 ? hits[0] : null;
 }
 
-/* وقتی فایل ثبت‌شده‌های قبلی ستون مدیر ندارد: حدس از نام شیت/فایل، وگرنه انتخاب دستی */
-function askManagerForFile(fName, sheetName) {
+/* وقتی فایل ثبت‌شده‌های قبلی ستون مدیر ندارد: حدس از نام شیت/فایل، وگرنه انتخاب دستی
+ * boxSel: سلکتور باکسی که فرم انتخاب در آن رندر می‌شود */
+function askManagerForFile(fName, sheetName, boxSel = '#prevResult') {
   const guess = guessManagerFromName(sheetName) || guessManagerFromName(fName);
   if (guess) return Promise.resolve({ name: guess.name, auto: true });
   return new Promise((resolve, reject) => {
-    const box = $('#prevResult');
-    box.innerHTML = `<div class="note-box mb">⚠️ ستون «مدیر پروژه» در این فایل پیدا نشد. مدیر پروژه مالک این فهرست را انتخاب کنید یا نامش را بنویسید:</div>
+    const box = $(boxSel);
+    box.innerHTML = `<div class="note-box mb">⚠️ ستون «مدیر پروژه» در این فایل${sheetName ? ` (شیت «${esc(sheetName)}»)` : ''} پیدا نشد. مدیر پروژه مالک این فهرست را انتخاب کنید یا نامش را بنویسید:</div>
       <div class="flex">
         <select class="input" id="prevMgrSel" style="max-width:250px">
           <option value="">— انتخاب از فهرست —</option>
@@ -814,7 +837,7 @@ $('#importPrevBtn').addEventListener('click', async () => {
 });
 
 /* ================= گزارش اکسل بررسی روزانه ================= */
-function buildDailyReportRows(norm, result, mgrCol, visitDate, extraErrs = []) {
+function buildDailyReportRows(norm, result, mgrCol, visitDate, extraErrs = [], manualMgrName = '') {
   const dupMap = {};
   (result.dupItems || []).forEach(d => dupMap[d.no] = d);
   const nfSet = new Set((result.nfItems || []).map(x => x.no));
@@ -825,7 +848,7 @@ function buildDailyReportRows(norm, result, mgrCol, visitDate, extraErrs = []) {
   }));
   const seenOk = new Set();
   return norm.map(r => {
-    const rawMgr = String((r.data || {})[mgrCol] ?? '').trim();
+    const rawMgr = mgrCol ? String((r.data || {})[mgrCol] ?? '').trim() : manualMgrName;
     const noMgr = noMgrSet.has(r.no) || !normalizeName(rawMgr);
     const isNf = !noMgr && nfSet.has(r.no);
     let dup = (!noMgr && !isNf) ? (dupMap[r.no] || null) : null;
@@ -989,6 +1012,96 @@ $('#clearHistoryBtn').addEventListener('click', async () => {
   if (error) return toast(hintSchema(error), 'err');
   toast(`تاریخچه پاک شد (${faNum(data.uploads)} فایل) — ${faNum(data.kept_records)} اشتراک ثبت‌شده حفظ شد`, 'ok');
   loadUploadsTable();
+});
+
+/* ================= پشتیبان‌گیری کامل (شماره‌ها + ثبت‌شده‌ها) ================= */
+/* ساخت CSV لیست شرکت گاز — با BOM تا اکسل فارسی را درست باز کند */
+function buildSubsBackupCsv(numbers) {
+  const parts = ['\ufeffشماره اشتراک\r\n'];
+  for (let i = 0; i < numbers.length; i += 5000) parts.push(numbers.slice(i, i + 5000).join('\r\n') + '\r\n');
+  return parts.join('');
+}
+function downloadText(txt, filename, mime) {
+  const blob = new Blob([txt], { type: mime || 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
+}
+/* دریافت همه شماره‌ها — ساپابیس هر درخواست حداکثر ۱۰۰۰ ردیف می‌دهد؛ ۶ درخواست هم‌زمان برای سرعت */
+async function fetchAllSubsNos(onProgress) {
+  const { count, error: cErr } = await sb.from('subs').select('id', { count: 'exact', head: true });
+  if (cErr) throw new Error(cErr.message);
+  const total = count || 0;
+  if (!total) return [];
+  const PAGE = 1000, CONC = 6;
+  const froms = [];
+  for (let f = 0; f < total; f += PAGE) froms.push(f);
+  const out = new Array(total);
+  let done = 0, idx = 0;
+  async function worker() {
+    while (idx < froms.length) {
+      const from = froms[idx++];
+      const { data, error } = await sb.from('subs').select('sub_no').order('id').range(from, from + PAGE - 1);
+      if (error) throw new Error(error.message);
+      for (let i = 0; i < data.length; i++) out[from + i] = data[i].sub_no;
+      done += data.length;
+      if (onProgress) onProgress(done, total);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONC, froms.length) }, worker));
+  return out.filter(Boolean);
+}
+/* ردیف‌های پشتیبان ثبت‌شده‌ها — قابل بازگردانی با کارت «فایل ۲» (ستون مدیر پروژه + ممیز) */
+function recordsBackupRows(recs) {
+  return recs.map(r => ({
+    'شماره اشتراک': r.sub_no,
+    'مدیر پروژه': r.manager_name || '',
+    'ممیز': extractInspector(r.data) || '',
+    'تاریخ بازدید (شمسی)': faDateNum(r.visit_date),
+    'تاریخ بازدید (میلادی)': r.visit_date || '',
+    'وضعیت': STATUS_FA[r.status] || r.status || '',
+    'فایل ثبت': r.filename || '',
+  }));
+}
+$('#backupAllBtn').addEventListener('click', async () => {
+  const btn = $('#backupAllBtn');
+  if (!confirm('پشتیبان کامل شامل: ۱) همه اشتراک‌های ثبت‌شده (اکسل) + ۲) کل لیست شرکت گاز (CSV).\nهر دو فایل دانلود می‌شوند — اگر مرورگر اجازه «دانلود چند فایل» پرسید، اجازه دهید. ادامه؟')) return;
+  btn.disabled = true; btn.textContent = '⏳ در حال آماده‌سازی...';
+  $('#backupResult').innerHTML = '';
+  $('#backupProgress').classList.remove('hidden');
+  try {
+    // ۱) ثبت‌شده‌ها (حجم کم، سریع)
+    const recs = await fetchAllRecordsView(q => q);
+    if (recs.length >= 100000) toast('تعداد ثبت‌شده‌ها خیلی زیاد است — ۱۰۰,۰۰۰ ردیف اول در پشتیبان است', '');
+    downloadXlsx(recordsBackupRows(recs), `پشتیبان-ثبت‌شده‌ها-${faDateNum(todayISO())}.xlsx`, 'ثبت‌شده‌ها');
+
+    // ۲) لیست شرکت گاز (حجم بالا — با نوار پیشرفت)
+    const t0 = Date.now();
+    const nos = await fetchAllSubsNos((done, total) => {
+      const pct = Math.round(done * 100 / total);
+      const elapsed = (Date.now() - t0) / 1000;
+      const eta = done > 0 ? Math.round(elapsed * (total - done) / done) : 0;
+      $('#backupProgressFill').style.width = pct + '%';
+      $('#backupProgressTxt').textContent = `${faNum(done)} از ${faNum(total)} شماره (${faNum(pct)}٪) — حدود ${faNum(eta)} ثانیه مانده`;
+    });
+    $('#backupProgress').classList.add('hidden');
+    $('#backupProgressFill').style.width = '0%';
+    downloadText(buildSubsBackupCsv(nos), `پشتیبان-لیست-شرکت-گاز-${faDateNum(todayISO())}.csv`);
+
+    $('#backupResult').innerHTML = `<div class="flex" style="flex-wrap:wrap;gap:6px">
+      <span class="badge green">✅ پشتیبان ثبت‌شده‌ها: ${faNum(recs.length)} ردیف (اکسل)</span>
+      <span class="badge blue">✅ پشتیبان لیست شرکت گاز: ${faNum(nos.length)} شماره (CSV)</span>
+    </div>
+    <div class="muted mt" style="font-size:12.5px;line-height:2">💾 هر دو فایل را در پوشه‌ای امن (کامپیوتر یا فلش) نگه دارید. بازگردانی: فایل CSV لیست با <b>کارت ۱</b> و فایل ثبت‌شده‌ها با <b>کارت ۲</b> آپلود می‌شود. نسخه آفلاین سایت هم این فایل‌ها را می‌پذیرد.</div>`;
+    toast('پشتیبان‌گیری کامل شد ✅', 'ok');
+  } catch (e) {
+    $('#backupProgress').classList.add('hidden');
+    $('#backupResult').innerHTML = '';
+    toast('خطا: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '⬇ دانلود پشتیبان کامل (شماره‌ها + ثبت‌شده‌ها)';
+  }
 });
 
 /* ================= subs list ================= */
