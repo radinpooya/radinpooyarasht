@@ -387,7 +387,22 @@ begin
     ('مدیر پروژه ۳', '#34d399');
 end $$;
 
+
+-- حجم دیتابیس و جدول‌ها (برای نمایش در داشبورد سایت)
+create or replace function public.db_usage()
+returns json
+language sql stable security definer set search_path = public as $$
+  select json_build_object(
+    'total', pg_database_size(current_database()),
+    'subs', pg_total_relation_size('public.subs'),
+    'records', pg_total_relation_size('public.records'),
+    'uploads', pg_total_relation_size('public.uploads'),
+    'managers', pg_total_relation_size('public.managers'),
+    'quota_mb', 500)
+$$;
+
 -- ---------- دسترسی‌ها ----------
+revoke all on function public.db_usage() from public, anon;
 revoke all on function public.extract_inspector(jsonb) from public, anon;
 revoke all on function public.process_upload(text, bigint, date, jsonb, text, jsonb) from public, anon;
 revoke all on function public.import_registered(text, bigint, date, jsonb, text) from public, anon;
@@ -397,6 +412,7 @@ revoke all on function public.delete_upload(bigint) from public, anon;
 revoke all on function public.reset_all() from public, anon;
 revoke all on function public.delete_all_uploads() from public, anon;
 
+grant execute on function public.db_usage() to authenticated;
 grant execute on function public.extract_inspector(jsonb) to authenticated;
 grant execute on function public.process_upload(text, bigint, date, jsonb, text, jsonb) to authenticated;
 grant execute on function public.import_registered(text, bigint, date, jsonb, text) to authenticated;
