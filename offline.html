@@ -261,7 +261,7 @@ async function loadState() {
       }
     }
     const recs = await idbGet('records') || [];
-    state.records = new Map(recs.map(r => [r.no, { mgr: r.mgr, insp: r.insp, dISO: r.dISO }]));
+    state.records = new Map(recs.map(r => [r.no, { mgr: r.mgr, insp: r.insp, dISO: r.dISO, st: r.st || 'new' }]));
     state.pending = await idbGet('pending') || [];
     state.mgrs = await idbGet('mgrs') || [];
     renderStats();
@@ -388,7 +388,7 @@ function addPrevSheet(headers, rows, subCol, sheetName, fName, dateISO, boxSel) 
       const mgr = it.mgr || manualMgr;
       if (!normalizeName(mgr)) { res.nf++; continue; }
       addMgrName(mgr);
-      state.records.set(it.no, { mgr, insp: it.insp, dISO: dateISO });
+      state.records.set(it.no, { mgr, insp: it.insp, dISO: dateISO, st: 'new' });
       res.ok++;
     }
     res.note = `شیت «${sheetName}»: ${faNum(res.ok)} اضافه شد` +
@@ -444,36 +444,52 @@ $('#offPrevBtn').addEventListener('click', async () => {
 function processDailyRows(headers, rows, subCol, visitDate, manualMgrName = '') {
   const mgrCol = detectManagerCol(headers, subCol);
   const norm = rows.map(r => ({ no: S.normalizeSubNo(r[subCol]), data: r })).filter(r => r.no);
-  const nfItems = [], dupItems = [], okItems = [], noMgrItems = [];
+  const nfItems = [], dupItems = [], okItems = [], noMgrItems = [], ifdItems = [];
+  const seen = new Set();
   for (const r of norm) {
-    if (state.subs.size && !state.subs.has(r.no)) { nfItems.push({ no: r.no }); continue; }
-    if (state.records.has(r.no)) {
-      const p = state.records.get(r.no);
-      dupItems.push({ no: r.no, prev_manager: p.mgr, prev_inspector: p.insp, prev_date: p.dISO });
+    // مرحله ۱: تکراری داخل خود فایل (بار دوم به بعد)
+    if (seen.has(r.no)) { ifdItems.push({ no: r.no }); continue; }
+    seen.add(r.no);
+    // مرحله ۲: موجود در لیست شرکت گاز؟
+    if (state.subs.size && !state.subs.has(r.no)) {
+      nfItems.push({ no: r.no });
+      if (!state.records.has(r.no)) state.records.set(r.no, { mgr: '', insp: '', dISO: visitDate, st: 'not_found' });
+      continue;
+    }
+    // مرحله ۳: تکراری با ثبت‌شده‌های قبلی (فقط ثبت واقعی st=new)
+    const prev = state.records.get(r.no);
+    if (prev && (prev.st === 'new')) {
+      dupItems.push({ no: r.no, prev_manager: prev.mgr, prev_inspector: prev.insp, prev_date: prev.dISO });
       continue;
     }
     const rawMgr = mgrCol ? String((r.data || {})[mgrCol] ?? '').trim() : manualMgrName;
     if (!normalizeName(rawMgr)) { noMgrItems.push({ no: r.no }); continue; }
     const insp = extractInspector(r.data);
-    state.records.set(r.no, { mgr: rawMgr, insp, dISO: visitDate });
+    // مرحله ۴: ثبت
+    state.records.set(r.no, { mgr: rawMgr, insp, dISO: visitDate, st: 'new' });
     state.pending.push({ no: r.no, mgr: rawMgr, insp, dISO: visitDate });
     addMgrName(rawMgr);
     okItems.push({ no: r.no, mgr: rawMgr, insp });
   }
-  return { mgrCol, total: norm.length, ok: okItems, dupItems, nfItems, noMgrItems, norm };
+  return { mgrCol, total: norm.length, ok: okItems, dupItems, nfItems, noMgrItems, ifdItems, norm };
 }
 
 function buildOfflineReportRows(res, visitDate, manualMgrName = '') {
   const dataKeys = [];
   res.norm.forEach(r => Object.keys(r.data || {}).forEach(k => { if (!dataKeys.includes(k) && dataKeys.length < 20) dataKeys.push(k); }));
   const okSet = new Set(res.ok.map(x => x.no));
+  const ifdSet = new Set((res.ifdItems || []).map(x => x.no));
+  const occ = {};
   return res.norm.map(r => {
+    occ[r.no] = (occ[r.no] || 0) + 1;
+    const isRepeat = occ[r.no] > 1 && ifdSet.has(r.no);
     const dup = res.dupItems.find(d => d.no === r.no);
-    const isNf = res.nfItems.some(x => x.no === r.no) && !okSet.has(r.no) && !dup;
-    const noMgr = res.noMgrItems.some(x => x.no === r.no) && !okSet.has(r.no) && !dup;
+    const isNf = res.nfItems.some(x => x.no === r.no);
+    const noMgr = res.noMgrItems.some(x => x.no === r.no);
     const o = {
       'شماره اشتراک': r.no,
-      'نتیجه بررسی': noMgr ? 'بدون مدیر پروژه — ثبت نشد ⚠️'
+      'نتیجه بررسی': isRepeat ? 'تکراری داخل خود فایل 🔄'
+        : noMgr ? 'بدون مدیر پروژه — ثبت نشد ⚠️'
         : isNf ? 'ناموجود در لیست شرکت گاز ❌'
         : dup ? 'تکراری — قبلاً ثبت شده 🔁' : 'ثبت شد ✅',
       'مدیر پروژه (ثبت اول)': dup ? (dup.prev_manager || '') : (okSet.has(r.no) ? String((r.data || {})[res.mgrCol] ?? manualMgrName).trim() : ''),
@@ -524,18 +540,21 @@ $('#offDailyBtn').addEventListener('click', async () => {
     await saveState();
 
     const errs = [
+      ...res.ifdItems.map(d => ({ ...d, kind: 'in_file' })),
       ...res.dupItems.map(d => ({ ...d, kind: 'duplicate' })),
       ...res.nfItems.map(d => ({ ...d, kind: 'not_found' })),
       ...res.noMgrItems.map(d => ({ ...d, kind: 'no_manager' })),
     ];
-    const kindBadge = k => k === 'duplicate'
-      ? '<span class="badge amber">تکراری 🔁</span>'
+    const kindBadge = k => k === 'in_file'
+      ? '<span class="badge amber">تکراری داخل فایل 🔄</span>'
+      : k === 'duplicate' ? '<span class="badge amber">تکراری با ثبت قبلی 🔁</span>'
       : k === 'not_found' ? '<span class="badge red">ناموجود ❌</span>' : '<span class="badge gray">مدیر نامشخص ⚠️</span>';
     $('#offDailyResult').innerHTML = `
       <div class="flex mb" style="flex-wrap:wrap;gap:6px">
         <span class="badge blue">${faNum(res.total)} شماره بررسی شد</span>
         <span class="badge green">${faNum(res.ok.length)} ثبت جدید ✅ (ذخیره آفلاین)</span>
-        ${res.dupItems.length ? `<span class="badge amber">${faNum(res.dupItems.length)} تکراری 🔁</span>` : ''}
+        ${res.ifdItems.length ? `<span class="badge amber">${faNum(res.ifdItems.length)} تکراری داخل خود فایل 🔄</span>` : ''}
+        ${res.dupItems.length ? `<span class="badge amber">${faNum(res.dupItems.length)} تکراری با ثبت قبلی 🔁</span>` : ''}
         ${res.nfItems.length ? `<span class="badge red">${faNum(res.nfItems.length)} ناموجود ❌</span>` : ''}
         ${res.noMgrItems.length ? `<span class="badge gray">${faNum(res.noMgrItems.length)} بدون مدیر ⚠️</span>` : ''}
       </div>
