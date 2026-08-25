@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>سامانه اشتراک‌های گاز</title>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=15">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='18' font-size='18'>🔥</text></svg>">
 </head>
 <body>
@@ -148,7 +148,12 @@
             <label>تا تاریخ (میلادی)</label>
             <input type="date" class="input" id="dashTo">
           </div>
+          <div class="field" style="flex:1.4;min-width:180px">
+            <label>مدیر پروژه</label>
+            <select class="input" id="dashManager"><option value="">همه مدیران</option></select>
+          </div>
           <button class="btn blue" id="applyRange">اعمال بازه</button>
+          <button class="btn ghost" id="dashExportBtn">⬇ خروجی اکسل داشبورد</button>
         </div>
         <div class="grid cols-2">
           <div>
@@ -162,7 +167,7 @@
         </div>
       </div>
 
-      <div class="card green">
+      <div class="card green" id="mgrTableCard">
         <h3>جدول عملکرد مدیران در بازه</h3>
         <div class="table-wrap">
           <table id="mgrTable">
@@ -172,6 +177,17 @@
             <tbody></tbody>
           </table>
         </div>
+      </div>
+
+      <div class="card blue hidden" id="inspCard">
+        <h3 id="inspCardTitle">👷 ممیزهای این مدیر پروژه</h3>
+        <div class="table-wrap">
+          <table id="inspTable">
+            <thead><tr><th>ممیز / بازدیدکننده</th><th>کل ثبت‌های معتبر</th><th>ثبت‌های امروز</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="muted mt" style="font-size:12px">فقط ثبت‌های معتبر این مدیر در بازه انتخابی — ممیز از ستون‌های فایل روزانه خودکار خوانده می‌شود</div>
       </div>
     </section>
 
@@ -347,6 +363,7 @@
             <input class="input ltr" id="subsSearch" style="direction:ltr;text-align:left" placeholder="بخشی از شماره اشتراک...">
           </div>
           <button class="btn" id="subsSearchBtn">جستجو</button>
+          <button class="btn blue" id="subsAddBtn">➕ افزودن شماره</button>
         </div>
         <div class="table-wrap"><table id="subsTable"><thead></thead><tbody></tbody></table></div>
         <div class="pager" id="subsPager"></div>
@@ -394,9 +411,10 @@
           </div>
           <button class="btn blue" id="recFilterBtn">فیلتر</button>
           <button class="btn ghost" id="recExportBtn">⬇ خروجی اکسل</button>
+          <button class="btn" id="recAddBtn">➕ افزودن ثبت</button>
         </div>
         <div class="table-wrap"><table id="recordsTable">
-          <thead><tr><th>شماره اشتراک</th><th>وضعیت</th><th>ممیز</th><th>تاریخ بازدید</th><th>مدیر پروژه</th><th>فایل</th></tr></thead>
+          <thead><tr><th>شماره اشتراک</th><th>وضعیت</th><th>ممیز</th><th>تاریخ بازدید</th><th>مدیر پروژه</th><th>فایل</th><th>عملیات</th></tr></thead>
           <tbody></tbody>
         </table></div>
         <div class="pager" id="recordsPager"></div>
@@ -454,13 +472,24 @@
   </main>
 </div>
 
+<div id="modalOverlay" class="modal-overlay hidden">
+  <div class="modal-card">
+    <h3 id="modalTitle"></h3>
+    <div id="modalBody"></div>
+    <div class="flex" style="gap:8px;margin-top:16px">
+      <button class="btn blue" id="modalSave">💾 ذخیره</button>
+      <button class="btn ghost" id="modalCancel">انصراف</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script src="supabase.js"></script>
 <script src="xlsx.full.min.js"></script>
 <script src="chart.umd.js"></script>
 <script src="config.js"></script>
-<script src="shared.js"></script>
-<script src="app.js"></script>
+<script src="shared.js?v=15"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>
