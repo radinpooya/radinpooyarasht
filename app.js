@@ -166,6 +166,35 @@ async function boot() {
   loadDashboard();
 }
 
+/* ================= مودال عمومی ================= */
+function openModal(title, bodyHTML, onSave) {
+  $('#modalTitle').textContent = title;
+  $('#modalBody').innerHTML = bodyHTML;
+  $('#modalOverlay').classList.remove('hidden');
+  window.__modalSave = onSave;
+  if (typeof attachJalaliHints === 'function') attachJalaliHints();
+}
+function closeModal() { $('#modalOverlay').classList.add('hidden'); window.__modalSave = null; }
+$('#modalCancel').addEventListener('click', closeModal);
+$('#modalOverlay').addEventListener('click', e => { if (e.target.id === 'modalOverlay') closeModal(); });
+$('#modalSave').addEventListener('click', async () => {
+  const btn = $('#modalSave'); btn.disabled = true;
+  try { const r = await (window.__modalSave || (async () => {}))(); if (r !== false) closeModal(); }
+  catch (e) { toast('خطا: ' + e.message, 'err'); }
+  finally { btn.disabled = false; }
+});
+
+/* خروجی اکسل چند شیتی */
+function downloadWorkbook(sheets, filename) {
+  const wb = XLSX.utils.book_new();
+  sheets.forEach(sh => {
+    const ws = XLSX.utils.json_to_sheet(sh.rows.length ? sh.rows : [{ 'اطلاع': 'داده‌ای وجود ندارد' }]);
+    if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] };
+    XLSX.utils.book_append_sheet(wb, ws, (sh.name || 'sheet').slice(0, 31));
+  });
+  XLSX.writeFile(wb, filename);
+}
+
 /* ================= navigation ================= */
 $$('.nav-btn').forEach(btn => btn.addEventListener('click', () => {
   $$('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -189,6 +218,8 @@ async function refreshManagers() {
   const opts = MANAGERS.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
   const recMgr = $('#recManager');
   if (recMgr) recMgr.innerHTML = '<option value="">همه</option>' + opts;
+  const dashMgr = $('#dashManager');
+  if (dashMgr) dashMgr.innerHTML = '<option value="">همه مدیران</option>' + opts;
 }
 const mgrColor = id => (MANAGERS.find(m => m.id === id) || {}).color || '#38bdf8';
 
@@ -202,8 +233,10 @@ function statCard(label, value, color, sub) {
 async function loadDashboard() {
   const from = $('#dashFrom').value || null;
   const to = $('#dashTo').value || null;
-  const { data: d, error } = await sb.rpc('dashboard_stats', { p_from: from, p_to: to });
+  const mid = $('#dashManager') && $('#dashManager').value ? Number($('#dashManager').value) : null;
+  const { data: d, error } = await sb.rpc('dashboard_stats', { p_from: from, p_to: to, p_manager: mid });
   if (error) return toast('خطا در بارگذاری آمار: ' + error.message, 'err');
+  window.__lastDash = { d, mid };
 
   const remaining = Math.max(0, d.masterCount - d.validUnique);
   const progress = d.masterCount ? Math.round(d.validUnique * 1000 / d.masterCount) / 10 : 0;
@@ -226,7 +259,69 @@ async function loadDashboard() {
   renderCharts(d, progress);
   renderMgrTable(d);
   loadDbUsage();
+  // داشبورد اختصاصی هر مدیر
+  const mgrCard = $('#mgrTableCard'), inspCard = $('#inspCard');
+  if (mid) {
+    if (mgrCard) mgrCard.classList.add('hidden');
+    if (inspCard) inspCard.classList.remove('hidden');
+    loadInspectors(mid, from, to);
+  } else {
+    if (mgrCard) mgrCard.classList.remove('hidden');
+    if (inspCard) inspCard.classList.add('hidden');
+  }
 }
+
+/* ممیزهای یک مدیر پروژه */
+async function loadInspectors(mid, from, to) {
+  try {
+    const { data, error } = await sb.rpc('manager_inspectors', { p_manager: mid, p_from: from, p_to: to });
+    if (error) throw new Error(error.message);
+    const rows = data.rows || [];
+    window.__lastInsp = rows;
+    const mgrName = (MANAGERS.find(m => m.id === mid) || {}).name || '';
+    $('#inspCardTitle').textContent = '👷 ممیزهای ' + mgrName;
+    $('#inspTable tbody').innerHTML = rows.length ? rows.map(r => `<tr>
+      <td><b>${esc(r.insp)}</b></td>
+      <td>${faNum(r.c)}</td>
+      <td style="color:var(--green)">${faNum(r.today_c || 0)}</td>
+    </tr>`).join('') : '<tr><td colspan="3"><div class="empty-state"><div class="big">👷</div>هنوز ثبت معتبری برای این مدیر در این بازه نیست</div></td></tr>';
+  } catch (e) {
+    $('#inspCard').classList.add('hidden');
+    toast('خطا در بارگذاری ممیزها: ' + e.message, 'err');
+  }
+}
+
+/* خروجی اکسل داشبورد */
+$('#dashExportBtn').addEventListener('click', () => {
+  const L = window.__lastDash;
+  if (!L || !L.d) return toast('اول «اعمال بازه» را بزنید تا آمار بیاید', 'err');
+  const d = L.d;
+  const mgrName = L.mid ? (MANAGERS.find(m => m.id === L.mid) || {}).name || '' : 'همه مدیران';
+  const sum = [
+    { 'عنوان': 'بازه گزارش', 'مقدار': faDate(d.from) + ' تا ' + faDate(d.to) },
+    { 'عنوان': 'مدیر پروژه', 'مقدار': mgrName },
+    { 'عنوان': 'اشتراک‌های شرکت گاز', 'مقدار': faNum(d.masterCount) },
+    { 'عنوان': 'ثبت‌شده معتبر (یکتا)', 'مقدار': faNum(d.validUnique) },
+    { 'عنوان': 'باقی‌مانده', 'مقدار': faNum(Math.max(0, d.masterCount - d.validUnique)) },
+    { 'عنوان': 'کل ثبت‌شده یکتا', 'مقدار': faNum(d.registeredUnique) },
+    { 'عنوان': 'رکوردهای امروز', 'مقدار': faNum(d.todayRows) },
+    { 'عنوان': 'ثبت تکراری (مجموع)', 'مقدار': faNum(d.dupRows) },
+    { 'عنوان': 'ناموجود در لیست (مجموع)', 'مقدار': faNum(d.nfRows) },
+  ];
+  const mgrRows = MANAGERS.map(m => {
+    const s = (d.mgrStats || []).find(x => x.manager_id === m.id) || { uniq: 0, rows_n: 0, dups: 0, nf: 0 };
+    const valid = ((d.bar || []).find(b => b.manager_id === m.id) || {}).c || 0;
+    return { 'مدیر پروژه': m.name, 'اشتراک معتبر ثبت‌شده': valid, 'کل رکوردهای ارسالی': s.rows_n || 0, 'خطای تکراری': s.dups || 0, 'خطای ناموجود': s.nf || 0 };
+  });
+  const sheets = [{ name: 'خلاصه داشبورد', rows: sum }, { name: 'عملکرد مدیران', rows: mgrRows }];
+  if (L.mid && window.__lastInsp) {
+    sheets.push({ name: 'ممیزها', rows: window.__lastInsp.map(r => ({ 'ممیز / بازدیدکننده': r.insp, 'کل ثبت‌های معتبر': r.c, 'ثبت‌های امروز': r.today_c || 0 })) });
+  }
+  downloadWorkbook(sheets, `داشبورد-${mgrName}-${faDateNum(d.from)}-تا-${faDateNum(d.to)}.xlsx`);
+  toast('خروجی داشبورد دانلود شد ✅', 'ok');
+});
+
+$('#dashManager').addEventListener('change', () => loadDashboard());
 
 /* کارت فضای دیتابیس (نیازمند اجرای schema.sql جدید) */
 const fmtMB = bytes => { const mb = Number(bytes || 0) / 1048576; return mb >= 100 ? faNum(Math.round(mb)) : faNum(Math.round(mb * 10) / 10); };
@@ -839,9 +934,9 @@ $('#importPrevBtn').addEventListener('click', async () => {
     const mgrNote = sheetNotes.join('<br>');
     $('#prevResult').innerHTML = '';
 
-    // تکه‌تکه ارسال می‌کنیم تا حجم درخواست‌ها بالا نرود
-    const CH = 1000;
-    let total = 0, added = 0, dup = 0, nf = 0;
+    // تکه‌تکه ارسال می‌کنیم تا حجم درخواست‌ها بالا نرود (بسته بزرگ برای تشخیص تکراری داخل خود فایل)
+    const CH = 5000;
+    let total = 0, added = 0, dup = 0, nf = 0, ifd = 0;
     for (let i = 0; i < p_rows.length; i += CH) {
       const { data: r, error } = await sb.rpc('import_registered', {
         p_filename: f.name + (p_rows.length > CH ? ` (بخش ${Math.floor(i / CH) + 1})` : ''),
@@ -851,14 +946,15 @@ $('#importPrevBtn').addEventListener('click', async () => {
         p_uploaded_by: ME.email || null,
       });
       if (error) throw new Error(error.message);
-      total += r.total; added += r.added; dup += r.dup; nf += r.nf;
+      total += r.total; added += r.added; dup += r.dup; nf += r.nf; ifd += (r.ifd || 0);
     }
 
-    $('#prevResult').innerHTML = `<div class="flex">
+    $('#prevResult').innerHTML = `<div class="flex" style="flex-wrap:wrap;gap:6px">
       <span class="badge blue">${faNum(total + extras.length)} شماره بررسی شد</span>
       <span class="badge green">${faNum(added)} به ثبت‌شده‌ها اضافه شد ✅</span>
-      ${dup ? `<span class="badge amber">${faNum(dup)} از قبل موجود بود</span>` : ''}
-      ${nf ? `<span class="badge red">${faNum(nf)} در لیست شرکت گاز نبود و رد شد ❌</span>` : ''}
+      ${ifd ? `<span class="badge amber">${faNum(ifd)} تکراری داخل خود فایل 🔄</span>` : ''}
+      ${dup ? `<span class="badge amber">${faNum(dup)} از قبل موجود بود 🔁</span>` : ''}
+      ${nf ? `<span class="badge red">${faNum(nf)} در لیست شرکت گاز نبود و «ناموجود» ثبت شد ❌</span>` : ''}
       ${extras.length ? `<span class="badge gray">${faNum(extras.length)} بدون مدیر رد شد ⚠️</span>` : ''}
     </div>
     <div class="muted mt" style="font-size:12.5px">${mgrNote} — از این پس چک تکراری فایل‌های روزانه بر اساس همین ثبت‌شده‌ها انجام می‌شود.</div>`;
@@ -1200,12 +1296,13 @@ async function loadSubs() {
   data.forEach(r => Object.keys(r.data || {}).forEach(k => {
     if (!k.replace(/[\s‌]/g, '').includes('اشتراک') && !keys.includes(k) && keys.length < 4 && String(r.data[k]).trim() !== '') keys.push(k);
   }));
-  $('#subsTable thead').innerHTML = `<tr><th>شماره اشتراک</th>${keys.map(k => `<th>${esc(k)}</th>`).join('')}<th>وضعیت</th></tr>`;
+  $('#subsTable thead').innerHTML = `<tr><th>شماره اشتراک</th>${keys.map(k => `<th>${esc(k)}</th>`).join('')}<th>وضعیت</th><th>عملیات</th></tr>`;
   $('#subsTable tbody').innerHTML = data.length ? data.map(r => `<tr>
     <td class="ltr"><b>${esc(r.sub_no)}</b></td>
     ${keys.map(k => `<td>${esc((r.data || {})[k] ?? '')}</td>`).join('')}
     <td>${r.times > 0 ? `<span class="badge amber">ثبت شده (${faNum(r.times)} بار)</span>` : '<span class="badge gray">ثبت نشده</span>'}</td>
-  </tr>`).join('') : `<tr><td colspan="${keys.length + 2}"><div class="empty-state"><div class="big">🗄️</div>${subsQ ? 'موردی یافت نشد' : 'لیست شرکت گاز هنوز آپلود نشده — از بخش «آپلود فایل» اقدام کنید'}</div></td></tr>`;
+    <td><button class="btn danger sm" onclick="delSub(${r.id}, '${esc(r.sub_no)}', ${r.times})" title="حذف از لیست">🗑</button></td>
+  </tr>`).join('') : `<tr><td colspan="${keys.length + 3}"><div class="empty-state"><div class="big">🗄️</div>${subsQ ? 'موردی یافت نشد' : 'لیست شرکت گاز هنوز آپلود نشده — از بخش «آپلود فایل» اقدام کنید'}</div></td></tr>`;
   renderPager($('#subsPager'), subsPage, Math.max(1, Math.ceil(count / 50)), count, pg => { subsPage = pg; loadSubs(); });
 }
 
@@ -1218,6 +1315,31 @@ function renderPager(box, page, pages, total, go) {
   if (page > 1) prev.onclick = () => go(page - 1);
   if (page < pages) next.onclick = () => go(page + 1);
 }
+
+window.delSub = async (id, no, times) => {
+  const msg = times > 0
+    ? `این شماره از «لیست شرکت گاز» حذف شود؟\nشماره: ${no}\n⚠️ این شماره ${times} بار ثبت شده — رکوردهای ثبت‌شده حفظ می‌شوند اما از این پس «خارج از لیست» دیده می‌شوند.`
+    : `این شماره از «لیست شرکت گاز» حذف شود؟\nشماره: ${no}`;
+  if (!confirm(msg)) return;
+  const { error } = await sb.from('subs').delete().eq('id', id);
+  if (error) return toast('خطا: ' + error.message, 'err');
+  toast('از لیست شرکت گاز حذف شد', 'ok');
+  loadSubs(); refreshMasterLiveCount();
+};
+$('#subsAddBtn').addEventListener('click', () => {
+  openModal('➕ افزودن شماره به لیست شرکت گاز', `
+    <div class="field"><label>شماره اشتراک</label>
+      <input class="input ltr" id="mSubNo" style="direction:ltr;text-align:left" placeholder="مثلاً 10092643491"></div>
+    <div class="muted" style="font-size:12.5px;line-height:2">برای افزودن تعداد زیاد، از «آپلود فایل ← کارت ۱ ← افزودن به فعلی» استفاده کنید.</div>`,
+  async () => {
+    const no = S.normalizeSubNo($('#mSubNo').value);
+    if (!no) { toast('شماره معتبر وارد کنید', 'err'); return false; }
+    const { error } = await sb.from('subs').insert({ sub_no: no, data: {} });
+    if (error) throw new Error(String(error.message).includes('duplicate') ? 'این شماره قبلاً در لیست هست' : error.message);
+    toast('شماره به لیست اضافه شد ✅', 'ok');
+    loadSubs(); refreshMasterLiveCount();
+  });
+});
 
 /* ================= records list ================= */
 let recPage = 1;
@@ -1241,6 +1363,7 @@ async function loadRecords() {
   const from = (recPage - 1) * 50;
   const { data, error, count } = await q.range(from, from + 49);
   if (error) return toast('خطا: ' + error.message, 'err');
+  window.__recRows = data;
   $('#recordsTable tbody').innerHTML = data.length ? data.map(r => `<tr>
     <td class="ltr"><b>${esc(r.sub_no)}</b></td>
     <td>${statusBadge(r.status)}</td>
@@ -1248,9 +1371,62 @@ async function loadRecords() {
     <td>${faDate(r.visit_date)}</td>
     <td>${esc(r.manager_name || '—')}</td>
     <td class="ltr" style="max-width:160px;overflow:hidden;text-overflow:ellipsis">${esc(r.filename || '—')}</td>
-  </tr>`).join('') : '<tr><td colspan="6"><div class="empty-state"><div class="big">📋</div>هنوز اشتراکی ثبت نشده است</div></td></tr>';
+    <td class="flex">
+      <button class="btn ghost sm" onclick="editRec(${r.id})" title="ویرایش">✏️</button>
+      <button class="btn danger sm" onclick="delRec(${r.id})" title="حذف">🗑</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="7"><div class="empty-state"><div class="big">📋</div>هنوز اشتراکی ثبت نشده است</div></td></tr>';
   renderPager($('#recordsPager'), recPage, Math.max(1, Math.ceil(count / 50)), count, pg => { recPage = pg; loadRecords(); });
 }
+
+const mgrOptions = sel => MANAGERS.map(m => `<option value="${m.id}" ${m.id === sel ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
+function recModal(r) {
+  openModal(r ? '✏️ ویرایش ثبت' : '➕ افزودن ثبت دستی', `
+    <div class="field"><label>شماره اشتراک ${r ? '(غیرقابل تغییر)' : ''}</label>
+      <input class="input ltr" id="mNo" ${r ? 'disabled' : ''} value="${r ? esc(r.sub_no) : ''}" style="direction:ltr;text-align:left" placeholder="مثلاً 10092643491"></div>
+    <div class="form-row">
+      <div class="field"><label>مدیر پروژه</label><select class="input" id="mMgr"><option value="">— بدون مدیر —</option>${mgrOptions(r ? r.manager_id : null)}</select></div>
+      <div class="field"><label>ممیز / بازدیدکننده</label><input class="input" id="mInsp" value="${r ? esc(extractInspector(r.data) || '') : ''}"></div>
+      <div class="field"><label>تاریخ (میلادی)</label><input type="date" class="input" id="mDate" value="${r ? (r.visit_date || '') : todayISO()}"></div>
+      <div class="field"><label>وضعیت</label><select class="input" id="mStatus">
+        <option value="new" ${!r || r.status === 'new' ? 'selected' : ''}>ثبت شده</option>
+        <option value="not_found" ${r && r.status === 'not_found' ? 'selected' : ''}>ناموجود در لیست گاز</option>
+      </select></div>
+    </div>`, async () => {
+    const mid = $('#mMgr').value ? Number($('#mMgr').value) : null;
+    const vd = $('#mDate').value || todayISO();
+    const status = $('#mStatus').value;
+    const insp = $('#mInsp').value.trim();
+    const dataObj = insp ? { 'ممیز (ویرایش دستی)': insp } : (r ? r.data : {});
+    if (r) {
+      const { error } = await sb.from('records').update({ manager_id: mid, visit_date: vd, status, data: dataObj }).eq('id', r.id);
+      if (error) throw new Error(error.message);
+      toast('ثبت ویرایش شد ✅', 'ok');
+    } else {
+      const no = S.normalizeSubNo($('#mNo').value);
+      if (!no) { toast('شماره اشتراک معتبر وارد کنید', 'err'); return false; }
+      const [chk] = await runCheck([no]);
+      if (chk.registered && chk.first && chk.first.status === 'new') throw new Error('این شماره قبلاً ثبت شده — از ویرایش همان ردیف استفاده کنید');
+      if (!chk.in_master && status === 'new' && !confirm('⚠️ این شماره در لیست شرکت گاز نیست.\nبا وضعیت «ناموجود» ثبت شود؟')) { $('#mStatus').value = 'not_found'; return false; }
+      const st2 = !chk.in_master ? 'not_found' : status;
+      const { error } = await sb.from('records').insert({ sub_no: no, manager_id: mid, status: st2, visit_date: vd, data: dataObj });
+      if (error) throw new Error(error.message);
+      toast('ثبت جدید اضافه شد ✅', 'ok');
+    }
+    loadRecords();
+  });
+}
+window.editRec = id => { const r = (window.__recRows || []).find(x => x.id === id); if (r) recModal(r); };
+window.delRec = async id => {
+  const r = (window.__recRows || []).find(x => x.id === id);
+  if (!r) return;
+  if (!confirm(`این رکورد حذف شود؟\nشماره: ${r.sub_no} — ${r.manager_name || 'بدون مدیر'}\n(گزارش فایل‌های تاریخچه دست‌نخورده می‌ماند)`)) return;
+  const { error } = await sb.from('records').delete().eq('id', id);
+  if (error) return toast('خطا: ' + error.message, 'err');
+  toast('رکورد حذف شد', 'ok');
+  loadRecords();
+};
+$('#recAddBtn').addEventListener('click', () => recModal(null));
 
 $('#recExportBtn').addEventListener('click', async () => {
   try {
