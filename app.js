@@ -545,6 +545,27 @@ $('#bulkBtn').addEventListener('click', async () => {
   }
 });
 
+/* تشخیص ستون تاریخ در فایل روزانه و تبدیل تاریخ شمسی/میلادی آن به ISO */
+function detectVisitDateCol(headers, subCol) {
+  return (headers || []).find(h => h !== subCol && /(?:تاریخ|date)/i.test(normalizeName(h)) && /(?:بازدید|ثبت|فرم|روز|date)/i.test(normalizeName(h)))
+    || (headers || []).find(h => h !== subCol && /(?:تاریخ|date)/i.test(normalizeName(h))) || null;
+}
+function parseFileVisitDate(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  // تاریخ شمسی، با رقم فارسی یا انگلیسی
+  const jalali = jalaliToISO(raw);
+  if (jalali) return jalali;
+  // ISO و حالت رایج YYYY/MM/DD میلادی
+  const v = enDigits(raw).replace(/\//g, '-');
+  const m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) {
+    const d = new Date(`${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}T12:00:00`);
+    if (!Number.isNaN(d.valueOf())) return d.toISOString().slice(0, 10);
+  }
+  return '';
+}
+
 /* ================= file reading ================= */
 function readWorkbookRows(file) {
   return file.arrayBuffer().then(buf => S.parseWorkbook(buf, XLSX));
@@ -707,7 +728,7 @@ async function rowsWithManagers(norm, mgrCol) {
   for (const r of norm) {
     const rawName = (r.data || {})[mgrCol];
     if (!normalizeName(rawName)) { extras.push({ no: r.no, data: r.data, kind: 'no_manager' }); continue; }
-    p_rows.push({ no: r.no, data: r.data, mid: await resolve(rawName) });
+    p_rows.push({ no: r.no, data: r.data, mid: await resolve(rawName), vd: r.vd || '' });
   }
   return { p_rows, extras };
 }
@@ -739,7 +760,8 @@ $('#recordUploadBtn').addEventListener('click', async () => {
 
     const { rows, subCol, headers } = await readWorkbookRows(f);
     if (!subCol) throw new Error('فایل خالی است');
-    const norm = rows.map(r => ({ no: S.normalizeSubNo(r[subCol]), data: r })).filter(r => r.no);
+    const dateCol = detectVisitDateCol(headers, subCol);
+    const norm = rows.map(r => ({ no: S.normalizeSubNo(r[subCol]), data: r, vd: dateCol ? parseFileVisitDate(r[dateCol]) : '' })).filter(r => r.no);
     if (!norm.length) throw new Error('هیچ شماره اشتراک معتبری در فایل یافت نشد');
 
     // تشخیص خودکار ستون مدیر پروژه از داخل فایل
@@ -752,7 +774,7 @@ $('#recordUploadBtn').addEventListener('click', async () => {
       const pick = await askManagerForFile(f.name, '', '#recordResult');
       const resolve = await buildManagerResolver();
       const mid = await resolve(pick.name);
-      p_rows = norm.map(r => ({ no: r.no, data: r.data, mid }));
+      p_rows = norm.map(r => ({ no: r.no, data: r.data, mid, vd: r.vd || '' }));
       extraErrs = [];
       mgrNote = `مدیر پروژه در ستون فایل نبود — همه «${pick.name}» ثبت شدند${pick.auto ? ' (برداشت خودکار)' : ''}`;
       $('#recordResult').innerHTML = '';
@@ -777,9 +799,12 @@ $('#recordUploadBtn').addEventListener('click', async () => {
       ...extraErrs,
     ];
     const pickedMgrName = p_rows.length ? (MANAGERS.find(m => m.id === p_rows[0].mid) || {}).name : null;
-    const mgrColNote = mgrCol
+    const dateNote = dateCol
+      ? ` — تاریخ از ستون «${esc(dateCol)}» خوانده شد (${faNum(norm.filter(x => x.vd).length)} ردیف معتبر)`
+      : ' — ستون تاریخ پیدا نشد؛ تاریخ انتخاب‌شده در فرم استفاده شد';
+    const mgrColNote = (mgrCol
       ? `ستون‌های شناسایی‌شده: اشتراک «${esc(subCol)}» — مدیر پروژه «${esc(mgrCol)}»`
-      : `ستون «مدیر پروژه» در فایل نبود${pickedMgrName ? ` — مدیر: «${esc(pickedMgrName)}» (انتخاب دستی)` : ''}`;
+      : `ستون «مدیر پروژه» در فایل نبود${pickedMgrName ? ` — مدیر: «${esc(pickedMgrName)}» (انتخاب دستی)` : ''}`) + dateNote;
     const kindBadge = k => k === 'in_file'
       ? '<span class="badge amber">تکراری داخل فایل 🔄</span>'
       : k === 'duplicate'
@@ -996,7 +1021,7 @@ function buildDailyReportRows(norm, result, mgrCol, visitDate, extraErrs = [], m
         : dup ? 'تکراری — قبلاً ثبت شده 🔁' : 'ثبت شد ✅',
       'مدیر پروژه (ثبت اول)': dup ? (dup.prev_manager || '') : (isOk ? String((r.data || {})[mgrCol] ?? manualMgrName).trim() : ''),
       'ممیز (ثبت اول)': dup ? (dup.prev_inspector || '') : (isOk ? extractInspector(r.data) : ''),
-      'تاریخ ثبت اول': dup ? faDateNum(dup.prev_date) : (isOk ? faDateNum(visitDate) : ''),
+      'تاریخ ثبت اول': dup ? faDateNum(dup.prev_date) : (isOk ? faDateNum(r.vd || visitDate) : ''),
     };
     for (const k of dataKeys) o['اطلاعات فایل | ' + k] = (r.data || {})[k] ?? '';
     return o;
