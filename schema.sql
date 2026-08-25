@@ -475,3 +475,26 @@ grant select on public.records_view, public.subs_view to authenticated;
 grant usage on all sequences in schema public to authenticated;
 
 -- پایان ✅
+
+-- ============================================================
+-- صورت وضعیت مدیران پروژه
+-- p_from و p_to تاریخ میلادیِ معادل ورودی شمسیِ رابط کاربری هستند.
+-- «از قبل»: تا روز قبل از شروع بازه | «جاری»: داخل بازه | «تاکنون»: جمع تا پایان بازه
+create or replace function public.manager_statement(p_from date, p_to date)
+returns json
+language sql stable security definer set search_path = public as $$
+  select json_build_object(
+    'rows', coalesce(json_agg(x order by x.manager_name), '[]'::json)
+  )
+  from (
+    select m.id as manager_id, m.name as manager_name,
+      count(distinct r.sub_no) filter (where r.status = 'new' and r.visit_date < p_from) as previous_count,
+      count(distinct r.sub_no) filter (where r.status = 'new' and r.visit_date between p_from and p_to) as current_count,
+      count(distinct r.sub_no) filter (where r.status = 'new' and r.visit_date <= p_to) as total_count
+    from public.managers m
+    left join public.records r on r.manager_id = m.id
+    group by m.id, m.name
+  ) x;
+$$;
+revoke all on function public.manager_statement(date, date) from public, anon;
+grant execute on function public.manager_statement(date, date) to authenticated;
