@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>سامانه اشتراک‌های گاز</title>
-<link rel="stylesheet" href="styles.css?v=15">
+<link rel="stylesheet" href="styles.css?v=16">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='18' font-size='18'>🔥</text></svg>">
 </head>
 <body>
@@ -74,6 +74,10 @@
     <button class="nav-btn" data-tab="check">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>
       <span>بررسی اشتراک</span>
+    </button>
+    <button class="nav-btn" data-tab="manager-statement">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V4h16v16H4Z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+      <span>صورت وضعیت مدیران پروژه</span>
     </button>
     <button class="nav-btn" data-tab="upload">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
@@ -188,6 +192,28 @@
           </table>
         </div>
         <div class="muted mt" style="font-size:12px">فقط ثبت‌های معتبر این مدیر در بازه انتخابی — ممیز از ستون‌های فایل روزانه خودکار خوانده می‌شود</div>
+      </div>
+    </section>
+
+    <!-- ======= MANAGER STATEMENT ======= -->
+    <section id="tab-manager-statement" class="hidden">
+      <div class="page-title">صورت وضعیت مدیران پروژه</div>
+      <div class="page-desc">تعداد اشتراک‌های معتبر هر مدیر پروژه؛ تاریخ‌ها به‌صورت شمسی وارد می‌شوند.</div>
+      <div class="card blue">
+        <div class="form-row">
+          <div class="field"><label>از تاریخ (شمسی)</label><input class="input jalali-input" id="statementFrom" inputmode="numeric" placeholder="۱۴۰۵/۰۵/۰۱"></div>
+          <div class="field"><label>تا تاریخ (شمسی)</label><input class="input jalali-input" id="statementTo" inputmode="numeric" placeholder="۱۴۰۵/۰۶/۰۱"></div>
+          <button class="btn blue" id="applyStatement">اعمال بازه</button>
+          <button class="btn ghost" id="statementExportBtn">⬇ خروجی اکسل</button>
+        </div>
+        <div class="hint-line">«جاری» فقط ثبت‌های معتبر در بازه انتخابی است. «از قبل» همه ثبت‌های معتبر پیش از شروع بازه است و «تاکنون» جمع این دو ستون تا پایان بازه محسوب می‌شود.</div>
+        <div id="statementRangeError" class="login-error"></div>
+      </div>
+      <div class="card green">
+        <div class="table-wrap"><table id="statementTable">
+          <thead><tr><th>نام مدیر پروژه</th><th>جاری</th><th>از قبل</th><th>تاکنون</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
       </div>
     </section>
 
@@ -489,7 +515,7 @@
 <script src="xlsx.full.min.js"></script>
 <script src="chart.umd.js"></script>
 <script src="config.js"></script>
-<script src="shared.js?v=15"></script>
-<script src="app.js?v=15"></script>
+<script src="shared.js?v=16"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>
