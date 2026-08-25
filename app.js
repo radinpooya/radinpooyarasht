@@ -161,7 +161,7 @@ async function boot() {
   $('#userAvatar').textContent = (ME.email || 'م').charAt(0).toUpperCase();
   $('#currentAdminEmail').textContent = ME.email || '-';
   await refreshManagers();
-  $('#recordDate').value = todayISO();
+  setJalaliDateInput('#recordDate', todayISO());
   refreshJalaliHints();
   loadDashboard();
 }
@@ -232,8 +232,9 @@ function statCard(label, value, color, sub) {
 }
 
 async function loadDashboard() {
-  const from = $('#dashFrom').value || null;
-  const to = $('#dashTo').value || null;
+  let from, to;
+  try { from = getJalaliDateInput('#dashFrom', null); to = getJalaliDateInput('#dashTo', null); }
+  catch (e) { return toast(e.message, 'err'); }
   const mid = $('#dashManager') && $('#dashManager').value ? Number($('#dashManager').value) : null;
   const { data: d, error } = await sb.rpc('dashboard_stats', { p_from: from, p_to: to, p_manager: mid });
   if (error) return toast('خطا در بارگذاری آمار: ' + error.message, 'err');
@@ -254,8 +255,8 @@ async function loadDashboard() {
   $('#progressNum').innerHTML = faNum(progress) + '<small>٪ از کل اشتراک‌ها</small>';
   requestAnimationFrame(() => $('#progressFill').style.width = Math.min(100, progress) + '%');
 
-  if (!$('#dashFrom').value) $('#dashFrom').value = d.from;
-  if (!$('#dashTo').value) $('#dashTo').value = d.to;
+  if (!$('#dashFrom').value) setJalaliDateInput('#dashFrom', d.from);
+  if (!$('#dashTo').value) setJalaliDateInput('#dashTo', d.to);
 
   renderCharts(d, progress);
   renderMgrTable(d);
@@ -426,11 +427,11 @@ $$('.quick-range').forEach(b => b.addEventListener('click', () => {
   const v = b.dataset.days;
   const to = todayISO();
   if (v === 'all') {
-    $('#dashFrom').value = ''; $('#dashTo').value = to;
+    $('#dashFrom').value = ''; setJalaliDateInput('#dashTo', to);
   } else {
     const d = new Date(); d.setDate(d.getDate() - (parseInt(v) - 1));
-    $('#dashFrom').value = d.toISOString().slice(0, 10);
-    $('#dashTo').value = to;
+    setJalaliDateInput('#dashFrom', d.toISOString().slice(0, 10));
+    setJalaliDateInput('#dashTo', to);
   }
   refreshJalaliHints();
   loadDashboard();
@@ -741,8 +742,8 @@ function hintSchema(e) {
   return m;
 }
 
-$('#recordDate').value = todayISO();
-$('#prevDate').value = todayISO();
+setJalaliDateInput('#recordDate', todayISO());
+setJalaliDateInput('#prevDate', todayISO());
 refreshJalaliHints();
 bindFileName('#prevFile', '#prevFileName');
 
@@ -780,7 +781,7 @@ $('#recordUploadBtn').addEventListener('click', async () => {
       $('#recordResult').innerHTML = '';
     }
 
-    const visitDate = $('#recordDate').value || todayISO();
+    const visitDate = getJalaliDateInput('#recordDate', todayISO());
     const singleMid = p_rows.length && new Set(p_rows.map(x => x.mid)).size === 1 ? p_rows[0].mid : null;
     const { data: r, error } = await sb.rpc('process_upload', {
       p_filename: f.name,
@@ -967,7 +968,7 @@ $('#importPrevBtn').addEventListener('click', async () => {
       const { data: r, error } = await sb.rpc('import_registered', {
         p_filename: f.name + (p_rows.length > CH ? ` (بخش ${Math.floor(i / CH) + 1})` : ''),
         p_manager_id: null,
-        p_visit_date: $('#prevDate').value || todayISO(),
+        p_visit_date: getJalaliDateInput('#prevDate', todayISO()),
         p_rows: p_rows.slice(i, i + CH),
         p_uploaded_by: ME.email || null,
       });
@@ -1378,14 +1379,17 @@ function applyRecFilters(q) {
   if ($('#recManager').value) q = q.eq('manager_id', Number($('#recManager').value));
   if ($('#recStatus').value) q = q.eq('status', $('#recStatus').value);
   if ($('#recInMaster') && $('#recInMaster').value) q = q.eq('in_master', $('#recInMaster').value === 'yes');
-  if ($('#recFrom').value) q = q.gte('visit_date', $('#recFrom').value);
-  if ($('#recTo').value) q = q.lte('visit_date', $('#recTo').value);
+  const recFrom = getJalaliDateInput('#recFrom', null);
+  const recTo = getJalaliDateInput('#recTo', null);
+  if (recFrom) q = q.gte('visit_date', recFrom);
+  if (recTo) q = q.lte('visit_date', recTo);
   return q;
 }
 
 async function loadRecords() {
   let q = sb.from('records_view').select('*', { count: 'exact' }).order('id', { ascending: false });
-  q = applyRecFilters(q);
+  try { q = applyRecFilters(q); }
+  catch (e) { toast(e.message, 'err'); return; }
   const from = (recPage - 1) * 50;
   const { data, error, count } = await q.range(from, from + 49);
   if (error) return toast('خطا: ' + error.message, 'err');
@@ -1413,14 +1417,14 @@ function recModal(r) {
     <div class="form-row">
       <div class="field"><label>مدیر پروژه</label><select class="input" id="mMgr"><option value="">— بدون مدیر —</option>${mgrOptions(r ? r.manager_id : null)}</select></div>
       <div class="field"><label>ممیز / بازدیدکننده</label><input class="input" id="mInsp" value="${r ? esc(extractInspector(r.data) || '') : ''}"></div>
-      <div class="field"><label>تاریخ (میلادی)</label><input type="date" class="input" id="mDate" value="${r ? (r.visit_date || '') : todayISO()}"></div>
+      <div class="field"><label>تاریخ (میلادی)</label><input type="date" class="input" id="mDate" value="${faDateNum(r ? (r.visit_date || todayISO()) : todayISO())}"></div>
       <div class="field"><label>وضعیت</label><select class="input" id="mStatus">
         <option value="new" ${!r || r.status === 'new' ? 'selected' : ''}>ثبت شده</option>
         <option value="not_found" ${r && r.status === 'not_found' ? 'selected' : ''}>ناموجود در لیست گاز</option>
       </select></div>
     </div>`, async () => {
     const mid = $('#mMgr').value ? Number($('#mMgr').value) : null;
-    const vd = $('#mDate').value || todayISO();
+    const vd = getJalaliDateInput('#mDate', todayISO());
     const status = $('#mStatus').value;
     const insp = $('#mInsp').value.trim();
     const dataObj = insp ? { 'ممیز (ویرایش دستی)': insp } : (r ? r.data : {});
@@ -1536,6 +1540,19 @@ $('#resetBtn').addEventListener('click', async () => {
     $('#setupError').textContent = friendlySetupError(e);
   }
 })();
+
+/* ورودی‌های تاریخ در رابط کاربری فقط شمسی هستند؛ دیتابیس همچنان ISO نگه می‌دارد. */
+function setJalaliDateInput(sel, iso) {
+  const el = typeof sel === 'string' ? $(sel) : sel;
+  if (el) el.value = iso ? faDateNum(iso) : '';
+}
+function getJalaliDateInput(sel, fallback = null) {
+  const el = typeof sel === 'string' ? $(sel) : sel;
+  if (!el || !el.value.trim()) return fallback;
+  const iso = jalaliToISO(el.value);
+  if (!iso) throw new Error('تاریخ را به شکل شمسی مانند «۱۴۰۵/۰۶/۰۳» وارد کنید.');
+  return iso;
+}
 
 /* ================= صورت وضعیت مدیران پروژه =================
    تاریخ در رابط کاربری شمسی است؛ برای ذخیره‌سازی و RPC به ISO تبدیل می‌شود. */
