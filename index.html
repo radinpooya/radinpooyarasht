@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>سامانه اشتراک‌های گاز</title>
-<link rel="stylesheet" href="styles.css?v=16">
+<link rel="stylesheet" href="styles.css?v=17">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='18' font-size='18'>🔥</text></svg>">
 </head>
 <body>
@@ -145,12 +145,12 @@
         </div>
         <div class="form-row mb">
           <div class="field">
-            <label>از تاریخ (میلادی)</label>
-            <input type="date" class="input" id="dashFrom">
+            <label>از تاریخ (شمسی)</label>
+            <input type="text" class="input jalali-input" id="dashFrom" inputmode="numeric" placeholder="۱۴۰۵/۰۶/۰۳">
           </div>
           <div class="field">
-            <label>تا تاریخ (میلادی)</label>
-            <input type="date" class="input" id="dashTo">
+            <label>تا تاریخ (شمسی)</label>
+            <input type="text" class="input jalali-input" id="dashTo" inputmode="numeric" placeholder="۱۴۰۵/۰۶/۰۳">
           </div>
           <div class="field" style="flex:1.4;min-width:180px">
             <label>مدیر پروژه</label>
@@ -289,8 +289,8 @@
         <div class="hint-line">اگر قبل از این سیستم اشتراک‌هایی ثبت کرده‌اید، فایلش را یک‌بار وارد کنید تا چکِ تکراری فایل‌های روزانه بر اساس آن‌ها انجام شود.</div>
         <div class="form-row mb">
           <div class="field" style="flex:1;min-width:170px">
-            <label>تاریخ ثبت (میلادی)</label>
-            <input type="date" class="input" id="prevDate">
+            <label>تاریخ ثبت (شمسی)</label>
+            <input type="text" class="input jalali-input" id="prevDate" inputmode="numeric" placeholder="۱۴۰۵/۰۶/۰۳">
           </div>
           <div class="field" style="flex:3">
             <label>فایل اکسل اشتراک‌های ثبت‌شده</label>
@@ -317,7 +317,7 @@
         <div class="form-row mb">
           <div class="field" style="flex:1;min-width:170px">
             <label>تاریخ جایگزین (فقط اگر فایل ستون تاریخ نداشته باشد)</label>
-            <input type="date" class="input" id="recordDate">
+            <input type="text" class="input jalali-input" id="recordDate" inputmode="numeric" placeholder="۱۴۰۵/۰۶/۰۳">
           </div>
           <div class="field" style="flex:3">
             <label>فایل اکسل خروجی امروز</label>
@@ -428,12 +428,12 @@
             </select>
           </div>
           <div class="field">
-            <label>از (میلادی)</label>
-            <input type="date" class="input" id="recFrom">
+            <label>از (شمسی)</label>
+            <input type="text" class="input jalali-input" id="recFrom" inputmode="numeric" placeholder="۱۴۰۵/۰۶/۰۳">
           </div>
           <div class="field">
-            <label>تا (میلادی)</label>
-            <input type="date" class="input" id="recTo">
+            <label>تا (شمسی)</label>
+            <input type="text" class="input jalali-input" id="recTo" inputmode="numeric" placeholder="۱۴۰۵/۰۶/۰۳">
           </div>
           <button class="btn blue" id="recFilterBtn">فیلتر</button>
           <button class="btn ghost" id="recExportBtn">⬇ خروجی اکسل</button>
@@ -515,7 +515,7 @@
 <script src="xlsx.full.min.js"></script>
 <script src="chart.umd.js"></script>
 <script src="config.js"></script>
-<script src="shared.js?v=16"></script>
-<script src="app.js?v=16"></script>
+<script src="shared.js?v=17"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>
