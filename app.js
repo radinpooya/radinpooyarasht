@@ -203,6 +203,7 @@ $$('.nav-btn').forEach(btn => btn.addEventListener('click', () => {
   $$('main.content > section').forEach(s => s.classList.add('hidden'));
   $('#tab-' + tab).classList.remove('hidden');
   if (tab === 'dashboard') loadDashboard();
+  if (tab === 'manager-statement') loadManagerStatement();
   if (tab === 'upload') { loadUploadsTable(); refreshMasterLiveCount(); }
   if (tab === 'subs') loadSubs();
   if (tab === 'records') loadRecords();
@@ -1509,4 +1510,73 @@ $('#resetBtn').addEventListener('click', async () => {
     $('#setupUrl').value = url; $('#setupKey').value = key;
     $('#setupError').textContent = friendlySetupError(e);
   }
+})();
+
+/* ================= صورت وضعیت مدیران پروژه =================
+   تاریخ در رابط کاربری شمسی است؛ برای ذخیره‌سازی و RPC به ISO تبدیل می‌شود. */
+const persianDigits = '۰۱۲۳۴۵۶۷۸۹';
+function enDigits(v) {
+  return String(v || '').replace(/[۰-۹]/g, d => String(persianDigits.indexOf(d))).replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+}
+function jalaliToISO(value) {
+  const m = enDigits(value).trim().replace(/[.\-]/g, '/').match(/^(\d{3,4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (!m) return null;
+  const jy = Number(m[1]), jm = Number(m[2]), jd = Number(m[3]);
+  if (jy < 1200 || jy > 1600 || jm < 1 || jm > 12 || jd < 1 || jd > 31) return null;
+  // تبدیل قابل‌اعتماد با تقویم فارسی خود مرورگر؛ محدوده جست‌وجو فقط حدود دو سال است.
+  const target = `${jy}/${String(jm).padStart(2, '0')}/${String(jd).padStart(2, '0')}`;
+  const fmt = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  const start = Date.UTC(jy + 620, 2, 1), end = Date.UTC(jy + 622, 3, 1);
+  for (let t = start; t <= end; t += 86400000) {
+    const parts = fmt.formatToParts(new Date(t)).filter(x => x.type !== 'literal');
+    const got = `${enDigits(parts[0].value)}/${enDigits(parts[1].value).padStart(2, '0')}/${enDigits(parts[2].value).padStart(2, '0')}`;
+    if (got === target) return new Date(t).toISOString().slice(0, 10);
+  }
+  return null;
+}
+function jalaliToday() { return faDateNum(todayISO()); }
+function statementRowsToExcel(rows, from, to) {
+  return rows.map(r => ({
+    'نام مدیر پروژه': r.manager_name,
+    'جاری': r.current_count || 0,
+    'از قبل': r.previous_count || 0,
+    'تاکنون': r.total_count || 0,
+    'بازه شمسی': `${from} تا ${to}`,
+  }));
+}
+async function loadManagerStatement() {
+  const fromJ = $('#statementFrom').value.trim(), toJ = $('#statementTo').value.trim();
+  const errBox = $('#statementRangeError');
+  errBox.textContent = '';
+  const from = jalaliToISO(fromJ), to = jalaliToISO(toJ);
+  if (!from || !to) {
+    errBox.textContent = 'تاریخ را به شکل شمسی «۱۴۰۵/۰۵/۰۱» وارد کنید.';
+    return;
+  }
+  if (from > to) { errBox.textContent = 'تاریخ شروع نمی‌تواند بعد از تاریخ پایان باشد.'; return; }
+  const { data, error } = await sb.rpc('manager_statement', { p_from: from, p_to: to });
+  if (error) { toast(hintSchema(error), 'err'); return; }
+  const rows = data?.rows || [];
+  window.__lastStatement = { rows, fromJ, toJ };
+  $('#statementTable tbody').innerHTML = rows.length ? rows.map(r => `<tr>
+    <td><span class="dot" style="background:${mgrColor(r.manager_id)}"></span><b>${esc(r.manager_name)}</b></td>
+    <td style="color:var(--blue);font-weight:700">${faNum(r.current_count)}</td>
+    <td>${faNum(r.previous_count)}</td>
+    <td style="color:var(--green);font-weight:800">${faNum(r.total_count)}</td>
+  </tr>`).join('') : '<tr><td colspan="4"><div class="empty-state">مدیر پروژه‌ای ثبت نشده است</div></td></tr>';
+}
+$('#applyStatement').addEventListener('click', loadManagerStatement);
+$('#statementExportBtn').addEventListener('click', () => {
+  const d = window.__lastStatement;
+  if (!d) return toast('ابتدا بازه را اعمال کنید.', 'err');
+  downloadXlsx(statementRowsToExcel(d.rows, d.fromJ, d.toJ), `صورت-وضعیت-مدیران-${d.fromJ}-تا-${d.toJ}.xlsx`, 'صورت وضعیت');
+  toast('خروجی صورت وضعیت دانلود شد ✅', 'ok');
+});
+// تاریخ پیش‌فرض: اول ماه شمسی تا امروز؛ به‌این‌ترتیب «از قبل» معنای عملیاتی دارد.
+(function initStatementDates() {
+  const today = jalaliToday();
+  const p = enDigits(today).split('/');
+  // روز اول همین ماه شمسی
+  $('#statementFrom').value = faDateNum(jalaliToISO(`${p[0]}/${p[1]}/1`) || todayISO());
+  $('#statementTo').value = today;
 })();
