@@ -368,10 +368,10 @@ function addMgrName(name) {
   if (clean && !state.mgrs.includes(clean)) state.mgrs.push(clean);
 }
 
-/* افزودن یک شیت ثبت‌شده‌ها: خروجی {ok, dup, nf, empty} */
+/* افزودن یک شیت ثبت‌شده‌ها — همان روند ۴ مرحله‌ای: تکراری داخل فایل → ناموجود → تکراری قبلی → ثبت */
 function addPrevSheet(headers, rows, subCol, sheetName, fName, dateISO, boxSel) {
   const mgrCol = detectManagerCol(headers, subCol);
-  const res = { ok: 0, dup: 0, nf: 0, note: '' };
+  const res = { ok: 0, dup: 0, nf: 0, ifd: 0, note: '' };
   const list = [];
   for (const r of rows) {
     const no = S.normalizeSubNo(r[subCol]);
@@ -381,10 +381,22 @@ function addPrevSheet(headers, rows, subCol, sheetName, fName, dateISO, boxSel) 
     list.push({ no, mgr: mgr || null, insp: extractInspector(r) });
   }
   if (!list.length) { res.note = 'شیت «' + sheetName + '»: شماره اشتراکی نداشت'; return Promise.resolve(res); }
+  const seen = new Set();
   const apply = manualMgr => {
     for (const it of list) {
-      if (state.records.has(it.no)) { res.dup++; continue; }
-      if (state.subs.size && !state.subs.has(it.no)) { res.nf++; continue; } // چک ناموجود فقط وقتی لیست اصلی وارد شده
+      // مرحله ۱: تکراری داخل خود فایل
+      if (seen.has(it.no)) { res.ifd++; continue; }
+      seen.add(it.no);
+      // مرحله ۲: ناموجود در لیست گاز (فقط وقتی لیست اصلی وارد شده) → ثبت وضعیت not_found
+      if (state.subs.size && !state.subs.has(it.no)) {
+        res.nf++;
+        if (!state.records.has(it.no)) state.records.set(it.no, { mgr: '', insp: '', dISO: dateISO, st: 'not_found' });
+        continue;
+      }
+      // مرحله ۳: تکراری با ثبت قبلی (فقط ثبت واقعی)
+      const prev = state.records.get(it.no);
+      if (prev && prev.st === 'new') { res.dup++; continue; }
+      // مرحله ۴: ثبت
       const mgr = it.mgr || manualMgr;
       if (!normalizeName(mgr)) { res.nf++; continue; }
       addMgrName(mgr);
@@ -393,7 +405,8 @@ function addPrevSheet(headers, rows, subCol, sheetName, fName, dateISO, boxSel) 
     }
     res.note = `شیت «${sheetName}»: ${faNum(res.ok)} اضافه شد` +
       (mgrCol ? ` — مدیر از ستون «${mgrCol}»` : (manualMgr ? ` — مدیر: ${manualMgr}` : '')) +
-      (res.dup ? ` — ${faNum(res.dup)} تکراری رد شد` : '') + (res.nf ? ` — ${faNum(res.nf)} ناموجود/بی‌مدیر رد شد` : '');
+      (res.ifd ? ` — ${faNum(res.ifd)} تکراری داخل فایل` : '') +
+      (res.dup ? ` — ${faNum(res.dup)} تکراری قبلی` : '') + (res.nf ? ` — ${faNum(res.nf)} ناموجود/بی‌مدیر` : '');
     return res;
   };
   if (mgrCol) return Promise.resolve(apply(null));
@@ -412,19 +425,20 @@ $('#offPrevBtn').addEventListener('click', async () => {
     const sheets = S.parseWorkbookSheets(buf, XLSX);
     if (!sheets.length) throw new Error('فایل خالی است یا شیتی با داده ندارد');
     const dateISO = $('#offPrevDate').value || todayISO();
-    const notes = []; const sum = { ok: 0, dup: 0, nf: 0 };
+    const notes = []; const sum = { ok: 0, dup: 0, nf: 0, ifd: 0 };
     for (const sh of sheets) {
       if (!sh.subCol) continue;
       const r = await addPrevSheet(sh.headers, sh.rows, sh.subCol, sh.sheetName, f.name, dateISO, '#offPrevResult');
       notes.push(esc(r.note));
-      sum.ok += r.ok; sum.dup += r.dup; sum.nf += r.nf;
+      sum.ok += r.ok; sum.dup += r.dup; sum.nf += r.nf; sum.ifd += r.ifd || 0;
       $('#offPrevResult').innerHTML = '';
     }
     if (!sum.ok && !sum.dup && !sum.nf) throw new Error('هیچ شماره اشتراک معتبری یافت نشد');
     await saveState();
     $('#offPrevResult').innerHTML = `<div class="flex" style="flex-wrap:wrap;gap:6px">
       <span class="badge green">${faNum(sum.ok)} به ثبت‌شده‌ها اضافه شد ✅</span>
-      ${sum.dup ? `<span class="badge amber">${faNum(sum.dup)} از قبل موجود بود</span>` : ''}
+      ${sum.ifd ? `<span class="badge amber">${faNum(sum.ifd)} تکراری داخل خود فایل 🔄</span>` : ''}
+      ${sum.dup ? `<span class="badge amber">${faNum(sum.dup)} تکراری قبلی 🔁</span>` : ''}
       ${sum.nf ? `<span class="badge red">${faNum(sum.nf)} ناموجود در لیست / بدون مدیر رد شد</span>` : ''}
       <span class="badge blue">کل ثبت‌شده‌های آفلاین: ${faNum(state.records.size)}</span>
     </div>
