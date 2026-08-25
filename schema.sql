@@ -194,10 +194,12 @@ begin
     end if;
 
     -- مرحله ۴: معتبر و جدید → ثبت می‌شود
+    -- تاریخ هر ردیف، اگر در فایل روزانه وجود داشته باشد، اولویت دارد؛ تاریخ فرم فقط جایگزین است.
     v_new := v_new + 1;
     insert into records (sub_no, manager_id, upload_id, status, data, visit_date)
     values (v_no, v_mid, v_upload_id, 'new',
-            coalesce(v_row->'data', '{}'::jsonb), p_visit_date);
+            coalesce(v_row->'data', '{}'::jsonb),
+            coalesce(nullif(v_row->>'vd', '')::date, p_visit_date));
   end loop;
 
   update uploads set
