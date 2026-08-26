@@ -336,6 +336,23 @@
         <div id="recordResult"></div>
       </div>
 
+      <div class="card">
+        <h3>۴. بررسی موجود بودن در لیست شرکت گاز — بدون ثبت</h3>
+        <div class="hint-line">شماره‌های اشتراک داخل فایل فقط با لیست اصلی شرکت گاز چک می‌شوند و گزارش «موجود / ناموجود» می‌گیرید — <b>هیچ چیزی ثبت نمی‌شود</b> و لیست‌ها دست‌نخورده می‌مانند.</div>
+        <div class="form-row mb">
+          <div class="field" style="flex:3">
+            <label>فایل اکسل / CSV / TXT شماره‌های اشتراک</label>
+            <label class="file-drop file-drop-sm">
+              <input type="file" id="existFile" accept=".xlsx,.xls,.csv,.txt">
+              <span class="fd-txt">🔎 انتخاب فایل</span>
+              <span class="fd-name" id="existFileName"></span>
+            </label>
+          </div>
+          <button class="btn blue" id="existCheckBtn">بررسی موجود بودن</button>
+        </div>
+        <div id="existResult"></div>
+      </div>
+
       <div class="card green">
         <div class="flex mb" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
           <h3 style="margin:0">تاریخچه فایل‌های آپلودشده</h3>
@@ -522,6 +539,6 @@
 <script src="chart.umd.js"></script>
 <script src="config.js"></script>
 <script src="shared.js?v=18"></script>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>
