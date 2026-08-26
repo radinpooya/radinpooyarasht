@@ -1067,6 +1067,76 @@ function buildHistoryReportRows(recs, details, mgrName) {
   return rows;
 }
 
+/* ================= ۴) بررسی موجود بودن در لیست شرکت گاز (بدون ثبت) =================
+   فقط چک می‌کند شماره‌های فایل در جدول subs هستند یا نه — هیچ insert/update انجام نمی‌شود. */
+bindFileName('#existFile', '#existFileName');
+window.__existLast = null;
+$('#existCheckBtn').addEventListener('click', async () => {
+  const f = $('#existFile').files[0];
+  if (!f) return toast('ابتدا فایل شماره‌های اشتراک را انتخاب کنید', 'err');
+  const btn = $('#existCheckBtn');
+  btn.disabled = true;
+  try {
+    const { rows, subCol } = await readWorkbookRows(f);
+    if (!subCol) throw new Error('ستون شماره اشتراک در فایل پیدا نشد — سرستون باید عبارتی مثل «شماره اشتراک» داشته باشد');
+    const all = rows.map(r => S.normalizeSubNo(r[subCol])).filter(Boolean);
+    const uniq = [...new Set(all)];
+    if (!uniq.length) throw new Error('هیچ شماره اشتراک معتبری در فایل نیست');
+    const found = new Set();
+    for (let i = 0; i < uniq.length; i += 150) {
+      const chunk = uniq.slice(i, i + 150);
+      const { data, error } = await sb.from('subs').select('sub_no').in('sub_no', chunk);
+      if (error) throw new Error(error.message);
+      (data || []).forEach(s => found.add(s.sub_no));
+      $('#existResult').innerHTML = `<div class="muted" style="font-size:12.5px">🔎 در حال بررسی… ${faNum(Math.min(i + chunk.length, uniq.length))} / ${faNum(uniq.length)}</div>`;
+    }
+    window.__existLast = {
+      filename: f.name, subCol, allCount: all.length, dupInFile: all.length - uniq.length,
+      uniq, missing: uniq.filter(no => !found.has(no)),
+    };
+    renderExistResult();
+  } catch (e) {
+    $('#existResult').innerHTML = '';
+    toast('خطا: ' + e.message, 'err');
+  } finally { btn.disabled = false; }
+});
+function renderExistResult() {
+  const r = window.__existLast;
+  if (!r) return;
+  const foundCount = r.uniq.length - r.missing.length;
+  const maxShow = 500;
+  const shown = r.missing.slice(0, maxShow);
+  $('#existResult').innerHTML = `
+    <div class="flex mb" style="gap:8px;flex-wrap:wrap;align-items:center">
+      <span class="badge blue">کل ردیف‌های فایل: ${faNum(r.allCount)}</span>
+      <span class="badge gray">شماره یکتا: ${faNum(r.uniq.length)}</span>
+      <span class="badge green">موجود در لیست گاز ✅ ${faNum(foundCount)}</span>
+      <span class="badge red">ناموجود ❌ ${faNum(r.missing.length)}</span>
+      ${r.dupInFile ? `<span class="badge amber">${faNum(r.dupInFile)} تکراری داخل فایل ادغام شد 🔄</span>` : ''}
+    </div>
+    <div class="muted mb" style="font-size:12.5px">ستون شناسایی‌شده: «${esc(r.subCol)}» — فایل: <span class="ltr">${esc(r.filename)}</span></div>
+    <div class="flex mb" style="gap:8px;flex-wrap:wrap">
+      <button class="btn ghost sm" onclick="existExport('missing')">⬇ اکسل ناموجودها</button>
+      <button class="btn ghost sm" onclick="existExport('all')">⬇ اکسل کامل (با وضعیت)</button>
+    </div>
+    ${r.missing.length ? `<div class="table-wrap" style="max-height:280px"><table>
+      <thead><tr><th>#</th><th>شماره اشتراک</th><th>وضعیت</th></tr></thead>
+      <tbody>${shown.map((no, i) => `<tr><td>${faNum(i + 1)}</td><td class="ltr">${esc(no)}</td><td><span class="badge red">ناموجود در لیست ❌</span></td></tr>`).join('')}</tbody>
+    </table></div>${r.missing.length > maxShow ? `<div class="muted mt" style="font-size:12px">و ${faNum(r.missing.length - maxShow)} مورد دیگر — همه در خروجی اکسل هستند.</div>` : ''}`
+    : '<div class="hint-line">🎉 همه شماره‌های این فایل در لیست شرکت گاز موجود هستند.</div>'}`;
+}
+window.existExport = kind => {
+  const r = window.__existLast;
+  if (!r) return;
+  const missingSet = new Set(r.missing);
+  const rows = (kind === 'missing' ? r.missing : r.uniq).map(no => ({
+    'شماره اشتراک': no,
+    'وضعیت': missingSet.has(no) ? 'ناموجود در لیست گاز ❌' : 'موجود در لیست گاز ✅',
+  }));
+  if (!rows.length) return toast('موردی برای خروجی نیست', 'err');
+  downloadXlsx(rows, `بررسی-موجود-${kind === 'missing' ? 'ناموجودها' : 'کامل'}-${faDateNum(todayISO())}.xlsx`, kind === 'missing' ? 'ناموجودها' : 'بررسی موجود');
+};
+
 /* ================= uploads history ================= */
 async function loadUploadsTable() {
   const { data: rows, error } = await sb.from('uploads')
