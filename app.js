@@ -1075,6 +1075,9 @@ async function loadUploadsTable() {
     const d = u.details || {};
     const oldMissingDetails = (u.dup_count > 0 || u.notfound_count > 0) &&
       !(d.dupItems || []).length && !(d.nfItems || []).length && !(d.nmItems || []).length;
+    // ستون «تکراری» در تاریخچه = تکراری با ثبت قبلی 🔁 + تکراری داخل خود فایل 🔄
+    const ifdCount = (d.ifdItems || []).length;
+    const dupTotal = (u.dup_count || 0) + ifdCount;
     return `<tr>
     <td>${faNum(u.id)}</td>
     <td class="ltr" style="max-width:180px;overflow:hidden;text-overflow:ellipsis">${esc(u.filename || '—')}</td>
@@ -1082,7 +1085,7 @@ async function loadUploadsTable() {
     <td>${faDate(u.visit_date)}</td>
     <td>${faNum(u.total)}</td>
     <td style="color:var(--green)">${faNum(u.new_count)}</td>
-    <td style="color:var(--amber)">${faNum(u.dup_count)}</td>
+    <td style="color:var(--amber)">${faNum(dupTotal)}${ifdCount ? `<div class="muted" style="font-size:10.5px;line-height:1.8;white-space:nowrap">🔁 ${faNum(u.dup_count)} قبلی + 🔄 ${faNum(ifdCount)} داخل فایل</div>` : ''}</td>
     <td style="color:var(--red)">${faNum(u.notfound_count)}</td>
     <td class="ltr">${esc((u.uploaded_by || '—').split('@')[0])}</td>
     <td class="flex">
