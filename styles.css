@@ -179,7 +179,7 @@ html.theme-anim, html.theme-anim *, html.theme-anim *::before, html.theme-anim *
 .nav-btn.active {
   background: linear-gradient(90deg, rgba(245, 158, 11, .16), rgba(245, 158, 11, .04));
   color: var(--amber); font-weight: 700;
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: inset -3px 0 0 var(--accent); /* نوار اکنت سمت «شروع» (راست در RTL) */
 }
 html[data-theme="light"] .nav-btn.active { background: linear-gradient(90deg, rgba(217, 119, 6, .12), rgba(217, 119, 6, .03)); }
 
@@ -216,7 +216,7 @@ html[data-theme="dark"] .user-chip .avatar { color: #1a1206; }
 
 /* دکمه منوی موبایل + پس‌زمینه */
 .menu-btn {
-  display: none; position: fixed; top: 10px; inset-inline-start: 10px; z-index: 95;
+  display: none; position: fixed; top: 10px; inset-inline-start: 10px; z-index: 89; /* زیر مودال(90) و بک‌دراپ منو(94) */
   width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--border);
   background: var(--panel); color: var(--text); cursor: pointer;
   box-shadow: var(--shadow-1); align-items: center; justify-content: center;
@@ -322,8 +322,6 @@ input[type="color"].input { padding: 4px; height: 40px; cursor: pointer; }
 .btn:active:not(:disabled) { transform: translateY(0) scale(.985); }
 .btn:disabled { opacity: .55; cursor: not-allowed; transform: none; }
 .btn.blue { background: linear-gradient(135deg, var(--accent2), var(--accent2-deep)); color: var(--on-blue); box-shadow: var(--btn-shadow-blue); }
-html[data-theme="dark"] .btn.blue { color: #04121c; }
-html[data-theme="dark"] .btn { color: #1a1206; }
 .btn.ghost { background: var(--bg2); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
 .btn.ghost:hover { border-color: var(--accent2); }
 .btn.danger { background: linear-gradient(135deg, var(--red), var(--red-deep)); color: #fff; box-shadow: var(--btn-shadow-red); }
