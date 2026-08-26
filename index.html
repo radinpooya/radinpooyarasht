@@ -4,8 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>سامانه اشتراک‌های گاز</title>
-<link rel="stylesheet" href="styles.css?v=19">
+<link rel="stylesheet" href="styles.css?v=21">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='18' font-size='18'>🔥</text></svg>">
+<script>
+/* اعمال تم پیش از اولین رندر (بدون فلش رنگ اشتباه) */
+(function () {
+  try {
+    var p = localStorage.getItem('gaz-theme-pref') || 'dark';
+    var r = p === 'system'
+      ? (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+      : p;
+    document.documentElement.dataset.theme = r;
+  } catch (e) { document.documentElement.dataset.theme = 'dark'; }
+})();
+</script>
 </head>
 <body>
 
@@ -54,6 +66,10 @@
 
 <!-- ================= APP ================= -->
 <div id="appView" class="layout hidden">
+  <button class="menu-btn" id="menuBtn" aria-label="باز و بسته کردن منو">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+  </button>
+  <div class="nav-backdrop" id="navBackdrop"></div>
   <aside class="sidebar">
     <div class="brand">
       <svg viewBox="0 0 24 24" fill="none">
@@ -97,6 +113,12 @@
     </button>
 
     <div class="sidebar-foot">
+      <div class="theme-label"><span>حالت نمایش</span><span id="themeLabel">تیره</span></div>
+      <div class="theme-switch" role="group" aria-label="حالت نمایش">
+        <button class="theme-opt" data-theme-opt="dark" title="حالت تیره" aria-label="حالت تیره">🌙</button>
+        <button class="theme-opt" data-theme-opt="light" title="حالت روشن" aria-label="حالت روشن">☀️</button>
+        <button class="theme-opt" data-theme-opt="system" title="پیش‌فرض سیستم" aria-label="پیش‌فرض سیستم">🖥️</button>
+      </div>
       <div class="user-chip">
         <div class="avatar" id="userAvatar">م</div>
         <div>
@@ -539,6 +561,6 @@
 <script src="chart.umd.js"></script>
 <script src="config.js"></script>
 <script src="shared.js?v=18"></script>
-<script src="app.js?v=20"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>
