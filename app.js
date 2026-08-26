@@ -201,7 +201,10 @@ $$('.nav-btn').forEach(btn => btn.addEventListener('click', () => {
   btn.classList.add('active');
   const tab = btn.dataset.tab;
   $$('main.content > section').forEach(s => s.classList.add('hidden'));
-  $('#tab-' + tab).classList.remove('hidden');
+  const sec = $('#tab-' + tab);
+  sec.classList.remove('hidden');
+  sec.classList.remove('tab-anim'); void sec.offsetWidth; sec.classList.add('tab-anim');
+  document.body.classList.remove('nav-open');
   if (tab === 'dashboard') loadDashboard();
   if (tab === 'manager-statement') loadManagerStatement();
   if (tab === 'upload') { loadUploadsTable(); refreshMasterLiveCount(); }
@@ -227,8 +230,24 @@ const mgrColor = id => (MANAGERS.find(m => m.id === id) || {}).color || '#38bdf8
 /* ================= dashboard ================= */
 function statCard(label, value, color, sub) {
   return `<div class="stat-card" style="--sc:${color}">
-    <div class="lbl">${label}</div><div class="val">${faNum(value)}</div>
+    <div class="lbl">${label}</div><div class="val" data-n="${Number(value) || 0}">${faNum(value)}</div>
     ${sub ? `<div class="sub2">${sub}</div>` : ''}</div>`;
+}
+/* شمارنده‌های کارت آمار با انیمیشن کوتاه بالا می‌روند (با احترام به prefers-reduced-motion) */
+function animateStatNumbers() {
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  $$('#statsGrid .val[data-n]').forEach(el => {
+    const target = Number(el.dataset.n) || 0;
+    if (!target) return;
+    const t0 = performance.now(), dur = 650;
+    const tick = t => {
+      const k = Math.min(1, (t - t0) / dur);
+      const e = 1 - Math.pow(1 - k, 3);
+      el.textContent = k >= 1 ? faNum(target) : faNum(Math.round(target * e));
+      if (k < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
 }
 
 async function loadDashboard() {
@@ -254,6 +273,7 @@ async function loadDashboard() {
     statCard('رکوردهای امروز', d.todayRows, '#38bdf8', faDate(todayISO())) +
     statCard('ثبت تکراری', d.dupRows, '#fbbf24', 'قبلاً ثبت شده بودند') +
     statCard('ناموجود در لیست گاز', d.nfRows, '#f87171', 'در لیست شرکت گاز نیستند');
+  animateStatNumbers();
 
   $('#progressNum').innerHTML = faNum(progress) + '<small>٪ از کل اشتراک‌ها</small>';
   requestAnimationFrame(() => $('#progressFill').style.width = Math.min(100, progress) + '%');
@@ -370,8 +390,10 @@ const rtlTooltip = { rtl: true, textDirection: 'rtl' };
 
 function renderCharts(d) {
   Chart.defaults.font.family = "'Vazirmatn', Tahoma, sans-serif";
-  Chart.defaults.color = '#8ea0c2';
-  Chart.defaults.borderColor = 'rgba(34,51,84,.6)';
+  // رنگ نمودارها از متغیرهای تم خوانده می‌شود تا با سوییچ تم هماهنگ بماند
+  const cs = getComputedStyle(document.documentElement);
+  Chart.defaults.color = (cs.getPropertyValue('--muted') || '#8ea0c2').trim();
+  Chart.defaults.borderColor = (cs.getPropertyValue('--chart-grid') || 'rgba(34,51,84,.6)').trim();
 
   const labels = MANAGERS.map(m => m.name);
   const counts = MANAGERS.map(m => (d.bar.find(b => b.manager_id === m.id) || {}).c || 0);
@@ -1626,6 +1648,56 @@ async function fixBrokenVisitDates() {
   loadDashboard(); loadUploadsTable(); loadRecords();
 }
 $('#fixDatesBtn').addEventListener('click', fixBrokenVisitDates);
+
+/* ================= تم (تیره / روشن / سیستم) =================
+   ترجیح کاربر در localStorage ذخیره می‌شود؛ تعویض بدون رفرش صفحه است. */
+const THEME_KEY = 'gaz-theme-pref';
+function themePref() { try { return localStorage.getItem(THEME_KEY) || 'dark'; } catch (e) { return 'dark'; } }
+function themeResolved(pref) {
+  if (pref === 'system') return (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+  return pref === 'light' ? 'light' : 'dark';
+}
+function applyTheme(pref, animate = true) {
+  const resolved = themeResolved(pref);
+  const root = document.documentElement;
+  if (animate && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+    root.classList.add('theme-anim');
+    setTimeout(() => root.classList.remove('theme-anim'), 350);
+  }
+  root.dataset.theme = resolved;
+  $$('.theme-opt').forEach(b => b.classList.toggle('active', b.dataset.themeOpt === pref));
+  const lbl = $('#themeLabel');
+  if (lbl) lbl.textContent = pref === 'system' ? 'پیش‌فرض سیستم' : (resolved === 'light' ? 'روشن' : 'تیره');
+  window.dispatchEvent(new CustomEvent('gaz-theme', { detail: { theme: resolved } }));
+}
+$$('.theme-opt').forEach(b => b.addEventListener('click', () => {
+  try { localStorage.setItem(THEME_KEY, b.dataset.themeOpt); } catch (e) { /* خصوصی */ }
+  applyTheme(b.dataset.themeOpt);
+}));
+if (window.matchMedia && matchMedia('(prefers-color-scheme: light)').addEventListener) {
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (themePref() === 'system') applyTheme('system', false); });
+}
+applyTheme(themePref(), false);
+// با تعویض تم، نمودارهای داشبورد با رنگ‌های جدید بازترسیم می‌شوند
+window.addEventListener('gaz-theme', () => {
+  const last = window.__lastDash;
+  if (last && last.d && !$('#tab-dashboard').classList.contains('hidden')) renderCharts(last.d);
+});
+
+/* ================= منوی موبایل + واکنش drag/drop فایل ================= */
+$('#menuBtn').addEventListener('click', () => document.body.classList.toggle('nav-open'));
+$('#navBackdrop').addEventListener('click', () => document.body.classList.remove('nav-open'));
+$$('.file-drop').forEach(fd => {
+  const input = fd.querySelector('input[type="file"]');
+  ['dragenter', 'dragover'].forEach(ev => fd.addEventListener(ev, e => { e.preventDefault(); fd.classList.add('drag'); }));
+  ['dragleave', 'drop'].forEach(ev => fd.addEventListener(ev, e => { e.preventDefault(); fd.classList.remove('drag'); }));
+  fd.addEventListener('drop', e => {
+    if (input && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+      input.files = e.dataTransfer.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
+});
 
 /* ================= start ================= */
 (async () => {
