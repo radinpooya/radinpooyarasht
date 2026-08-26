@@ -238,6 +238,9 @@ async function loadDashboard() {
   const mid = $('#dashManager') && $('#dashManager').value ? Number($('#dashManager').value) : null;
   const { data: d, error } = await sb.rpc('dashboard_stats', { p_from: from, p_to: to, p_manager: mid });
   if (error) return toast('خطا در بارگذاری آمار: ' + error.message, 'err');
+  // اگر سال شمسی به‌جای سال میلادی ذخیره شده باشد (مثل 1405-05-31)، معادل شمسی درست نمایش داده شود
+  if (d.from && Number(String(d.from).slice(0, 4)) < 1900) d.from = jalaliToISO(d.from) || d.from;
+  if (d.to && Number(String(d.to).slice(0, 4)) < 1900) d.to = jalaliToISO(d.to) || d.to;
   window.__lastDash = { d, mid };
 
   const remaining = Math.max(0, d.masterCount - d.validUnique);
@@ -1528,6 +1531,31 @@ $('#resetBtn').addEventListener('click', async () => {
   toast('همه داده‌ها بازنشانی شد', 'ok');
   await refreshManagers(); loadDashboard(); loadSettings();
 });
+
+/* ================= تعمیر تاریخ‌های خراب =================
+   در واردکردن‌های قدیمی، گاهی تاریخ شمسیِ داخل فایل (مثل 1405-05-31) به‌همان شکل
+   در ستون میلادی date ذخیره شده است. این ابزار سال‌های زیر ۱۹۰۰ را پیدا می‌کند و
+   همان عدد را به‌عنوان شمسی به میلادی درست تبدیل می‌کند. هیچ داده‌ای حذف نمی‌شود. */
+async function fixBrokenVisitDates() {
+  const { data: recs, error: e1 } = await sb.from('records').select('id,visit_date').lt('visit_date', '1900-01-01').limit(10000);
+  if (e1) return toast('خطا: ' + e1.message, 'err');
+  const { data: ups, error: e2 } = await sb.from('uploads').select('id,visit_date').lt('visit_date', '1900-01-01').limit(10000);
+  if (e2) return toast('خطا: ' + e2.message, 'err');
+  const plan = [];
+  (recs || []).forEach(r => { const iso = jalaliToISO(r.visit_date); if (iso) plan.push({ table: 'records', id: r.id, iso, old: r.visit_date }); });
+  (ups || []).forEach(u => { const iso = jalaliToISO(u.visit_date); if (iso) plan.push({ table: 'uploads', id: u.id, iso, old: u.visit_date }); });
+  if (!plan.length) return toast('هیچ تاریخ خرابی پیدا نشد ✅ همه تاریخ‌ها درست هستند.', 'ok');
+  if (!confirm(`${faNum(plan.length)} تاریخ خراب پیدا شد (مثلاً ${plan[0].old} ← می‌شود ${faDateNum(plan[0].iso)}).\nتعمیر شود؟ هیچ داده‌ای حذف نمی‌شود.`)) return;
+  let done = 0, failed = 0;
+  for (let i = 0; i < plan.length; i += 50) {
+    const chunk = plan.slice(i, i + 50);
+    const results = await Promise.all(chunk.map(p => sb.from(p.table).update({ visit_date: p.iso }).eq('id', p.id)));
+    results.forEach(r => { if (r.error) failed++; else done++; });
+  }
+  toast(failed ? `⚠️ ${faNum(done)} تعمیر شد، ${faNum(failed)} خطا داشت` : `✅ ${faNum(done)} تاریخ خراب تعمیر شد`, failed ? 'err' : 'ok');
+  loadDashboard(); loadUploadsTable(); loadRecords();
+}
+$('#fixDatesBtn').addEventListener('click', fixBrokenVisitDates);
 
 /* ================= start ================= */
 (async () => {
